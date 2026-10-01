@@ -202,9 +202,13 @@ impl ForwardManager {
         }
     }
 
-    /// Kill a forward's child; the monitor thread emits the state event.
+    /// Kill a forward's child and remove the entry. Killing on Windows does
+    /// not reap the process, so `wait()` is called here — that consumes the
+    /// exit status and makes later `try_wait` return `Ok(None)` forever, so
+    /// the monitor thread cannot be relied upon to clean this entry up; we
+    /// remove it from the map directly.
     pub fn stop(&self, id: &str) -> bool {
-        let entry = match self.entries.lock().unwrap().get(id).cloned() {
+        let entry = match self.entries.lock().unwrap().remove(id) {
             Some(e) => e,
             None => return false,
         };
@@ -214,6 +218,7 @@ impl ForwardManager {
             let _ = child.wait();
         }
         *child_g = None;
+        drop(child_g);
         let mut state_g = entry.status.lock().unwrap();
         state_g.state = "stopped".to_string();
         state_g.reason = "stopped by user".to_string();
