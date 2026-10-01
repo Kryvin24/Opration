@@ -1,0 +1,1942 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Teleport</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: Canvas;
+      --text: CanvasText;
+      --muted: GrayText;
+      --surface: color-mix(in srgb, CanvasText 5%, Canvas);
+      --surface-strong: color-mix(in srgb, CanvasText 8%, Canvas);
+      --border: color-mix(in srgb, CanvasText 14%, transparent);
+      --brand: #0fdc78;
+      --danger: #e5484d;
+      --warning: #f5a524;
+      --radius: 10px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 20px 24px 32px;
+      background: var(--bg);
+      color: var(--text);
+      font: 14px/1.55 "Inter", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    }
+    h1 { font-size: 16px; font-weight: 650; margin: 0; display: flex; align-items: center; gap: 8px; }
+    h1 .logo { width: 20px; height: 20px; flex: none; }
+    .subtitle { color: var(--muted); font-size: 12px; margin: 2px 0 18px; }
+
+    .status-card {
+      display: flex; align-items: center; gap: 14px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+    }
+    .badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 3px 10px; border-radius: 999px;
+      font-size: 12px; font-weight: 600;
+      border: 1px solid var(--border);
+    }
+    .badge .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+    .badge.connected { color: var(--brand); }
+    .badge.disconnected { color: var(--muted); }
+    .badge.error { color: var(--danger); }
+    .meta { display: flex; flex-wrap: wrap; gap: 4px 18px; font-size: 12.5px; color: var(--muted); flex: 1; }
+    .meta b { color: var(--text); font-weight: 600; font-family: ui-monospace, Consolas, monospace; }
+
+    .actions { display: flex; gap: 8px; margin-bottom: 18px; flex-wrap: wrap; }
+    button {
+      font: inherit; font-size: 13px; font-weight: 550;
+      padding: 7px 14px; border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--surface-strong); color: var(--text);
+      cursor: pointer;
+    }
+    button:hover { border-color: color-mix(in srgb, CanvasText 30%, transparent); }
+    button:disabled { opacity: .55; cursor: default; }
+    button.primary { background: var(--brand); border-color: transparent; color: #063; }
+    button.danger:hover { border-color: var(--danger); color: var(--danger); }
+
+    .panel {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .panel-head {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 14px; border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+    .panel-head h2 { font-size: 13.5px; font-weight: 600; margin: 0; }
+    .filters { display: flex; gap: 4px; }
+    .filters button { padding: 3px 10px; font-size: 12px; border-radius: 999px; background: transparent; }
+    .filters button.active { background: var(--surface-strong); border-color: color-mix(in srgb, CanvasText 30%, transparent); }
+
+    /* Resource card grid */
+    .resource-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+      gap: 12px;
+      padding: 14px;
+    }
+    .res-card {
+      display: flex; flex-direction: column; gap: 8px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+      padding: 12px 14px;
+      min-width: 0;
+    }
+    .res-card:hover { border-color: color-mix(in srgb, CanvasText 30%, transparent); }
+    .card-top { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
+    .card-top .kind-ico { width: 20px; height: 20px; flex: none; color: var(--muted); margin-top: 2px; }
+    .card-name { flex: 1; min-width: 0; }
+    .card-name .name {
+      font-weight: 700; font-size: 13.5px; line-height: 1.35;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .card-name .kind-tag { font-size: 11px; color: var(--muted); }
+    .card-tags { display: flex; gap: 4px; flex-wrap: wrap; }
+    .card-tags .tag { font-size: 10.5px; color: var(--muted); background: var(--surface-strong); border: 1px solid var(--border); border-radius: 4px; padding: 0 6px; }
+    .card-actions { margin-top: auto; }
+    .card-actions button { width: 100%; padding: 6px 10px; font-size: 12px; }
+
+    /* Search row */
+    .search-row {
+      display: flex; align-items: center; gap: 12px;
+      padding: 10px 14px; border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+    #searchInput {
+      flex: 1; max-width: 440px;
+      font: inherit; font-size: 13px;
+      padding: 7px 12px; border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--bg); color: var(--text);
+      outline: none;
+    }
+    #searchInput:focus { border-color: var(--brand); }
+    #searchInput::placeholder { color: var(--muted); }
+    .res-count { font-size: 12px; color: var(--muted); white-space: nowrap; }
+
+    .empty, .loading { padding: 26px 14px; text-align: center; color: var(--muted); font-size: 13px; }
+    .hint { font-size: 12px; color: var(--muted); margin: -10px 0 16px; }
+    code { font-family: ui-monospace, Consolas, monospace; background: var(--surface-strong); padding: 1px 5px; border-radius: 4px; }
+
+    /* SSH terminal overlay */
+    .term-overlay {
+      position: fixed; inset: 0; z-index: 9999;
+      /* 默认隐藏：display:flex 会覆盖 HTML 的 hidden 属性，曾导致覆盖层常驻盖住整个页面（SSH 标题 + 白屏） */
+      display: none; flex-direction: column;
+      background: var(--bg);
+    }
+    .term-overlay.open { display: flex; }
+    .term-bar {
+      display: flex; align-items: center; gap: 8px;
+      padding: 7px 12px; border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+    .term-bar .term-title { font-weight: 650; font-size: 13px; font-family: ui-monospace, Consolas, monospace; margin-right: auto; }
+    .term-bar button { padding: 3px 10px; font-size: 13px; }
+    #termContainer { flex: 1; min-height: 0; padding: 6px 8px; }
+
+    /* Reconnect bar */
+    .reconnect-bar {
+      display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+      padding: 6px 12px;
+      background: #fbf0e1; border-bottom: 1px solid var(--border);
+      font-size: 12.5px; color: #8a4a18;
+    }
+    .reconnect-bar[hidden] { display: none; }
+    .reconnect-bar label { display: flex; align-items: center; gap: 5px; }
+    .reconnect-bar input { accent-color: var(--brand); }
+    .reconnect-bar button { padding: 3px 14px; font-size: 12px; }
+
+    /* Snippet bar */
+    .snippet-bar {
+      display: flex; align-items: center; gap: 6px;
+      padding: 5px 8px; border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+    .snippet-bar.collapsed { display: none; }
+    .snippet-scroll {
+      flex: 1; display: flex; gap: 6px; overflow-x: auto;
+      scrollbar-width: thin; padding-bottom: 1px;
+    }
+    .snippet-chip {
+      flex: none; display: inline-flex; align-items: center;
+      padding: 3px 10px; font-size: 11.5px;
+      border: 1px solid var(--border); border-radius: 999px;
+      background: var(--bg); color: var(--text); cursor: pointer;
+      font-family: ui-monospace, Consolas, monospace; white-space: nowrap;
+    }
+    .snippet-chip:hover { border-color: var(--brand); color: var(--brand); }
+    .snippet-chip.custom { border-style: dashed; }
+    .snippet-chip .chip-x { margin-left: 6px; color: var(--danger); }
+    .snippet-add-row { display: flex; align-items: center; gap: 6px; flex: none; }
+    .snippet-add-row[hidden] { display: none; }
+    #snippetAddInput {
+      width: 280px; font-size: 12px; padding: 4px 9px;
+      border-radius: 7px; border: 1px solid var(--border);
+      background: var(--bg); color: var(--text); outline: none;
+    }
+    #snippetAddInput:focus { border-color: var(--brand); }
+    #snippetAddBtn { flex: none; padding: 2px 10px; font-size: 14px; }
+    #termContainer .xterm { height: 100%; }
+    /* xterm rendering essentials inlined so the terminal does NOT depend on the
+       external vendor/xterm.css link loading inside DBX's srcdoc sandbox. */
+    .xterm {
+      font-family: Consolas, "Cascadia Mono", monospace;
+      position: relative; user-select: none; -ms-user-select: none; -webkit-user-select: none;
+    }
+    .xterm.focus, .xterm:focus { outline: none; }
+    .xterm .xterm-helpers { position: absolute; top: 0; z-index: 5; }
+    .xterm .xterm-helper-textarea {
+      position: absolute; opacity: 0; left: -9999em; top: 0; width: 0; height: 0;
+      z-index: -5; overflow: hidden; resize: none; margin: 0; padding: 0; border: 0;
+    }
+    .xterm .xterm-viewport { position: absolute; right: 0; left: 0; top: 0; bottom: 0; overflow-y: scroll; cursor: default; }
+    .xterm .xterm-screen { position: relative; }
+    .xterm .xterm-screen canvas { position: absolute; left: 0; top: 0; }
+    .xterm .xterm-scroll-area { visibility: hidden; }
+    .xterm-char-measure-element { display: inline-block; visibility: hidden; position: absolute; top: 0; left: -9999em; line-height: normal; }
+
+    /* ===== Node groups ===== */
+    .group-section + .group-section { border-top: 1px solid var(--border); }
+    .group-head {
+      display: flex; align-items: center; gap: 10px;
+      padding: 9px 14px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      cursor: pointer; user-select: none;
+      font-size: 13px; font-weight: 600;
+    }
+    .group-head:hover { background: var(--surface-strong); }
+    .group-caret { width: 11px; color: var(--muted); flex: none; font-size: 9px; text-align: center; }
+    .group-count { font-size: 11.5px; font-weight: 500; color: var(--muted); }
+    .group-count .down { color: var(--danger); font-weight: 600; }
+    .group-check { margin-left: auto; font-weight: 500; font-size: 12px; display: flex; align-items: center; gap: 5px; color: var(--muted); }
+    .group-check input { width: 14px; height: 14px; accent-color: var(--brand); cursor: pointer; }
+    .group-section.collapsed .group-head { border-bottom-color: transparent; }
+    .group-section.collapsed .group-grid { display: none; }
+    .group-grid { padding: 12px; }
+
+    /* per-card checkbox */
+    .card-check { display: inline-flex; margin-top: 2px; flex: none; }
+    .card-check input { width: 14px; height: 14px; accent-color: var(--brand); cursor: pointer; margin: 0; }
+    .res-card.offline { opacity: .5; }
+    .res-card.offline .card-check input { cursor: not-allowed; }
+    .offline-badge { font-size: 10.5px; color: var(--danger); font-weight: 600; margin-left: 6px; }
+    .slow-badge {
+      font-size: 10.5px; color: var(--warning); font-weight: 600; margin-left: 6px;
+    }
+
+    /* ===== Batch action bar ===== */
+    .batch-bar {
+      position: fixed; left: 50%; transform: translateX(-50%);
+      bottom: 18px; z-index: 9000;
+      width: min(560px, 90%);
+      border: 1px solid var(--border); border-radius: 12px;
+      background: color-mix(in srgb, Canvas 94%, transparent);
+      box-shadow: 0 10px 34px rgba(0,0,0,.20);
+      padding: 10px 14px;
+      display: none; flex-direction: column; gap: 8px;
+    }
+    .batch-bar.open { display: flex; }
+    .batch-bar-row { display: flex; align-items: center; gap: 10px; }
+    #batchSelected { font-size: 12.5px; font-weight: 600; }
+    .batch-bar-row .spacer { flex: 1; }
+    .batch-bar-row button { padding: 5px 12px; font-size: 12px; }
+    .batch-form { display: none; flex-direction: column; gap: 9px; border-top: 1px solid var(--border); padding-top: 10px; }
+    .batch-form.open { display: flex; }
+    #batchCommand {
+      font-family: ui-monospace, Consolas, monospace;
+      font-size: 12.5px; padding: 8px 12px; border-radius: 8px;
+      border: 1px solid var(--border); background: var(--bg); color: var(--text); outline: none;
+    }
+    #batchCommand:focus { border-color: var(--brand); }
+    .batch-opts { display: flex; align-items: center; gap: 16px; font-size: 12px; color: var(--muted); }
+    .batch-opts input { width: 64px; font: inherit; font-size: 12px; padding: 5px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text); }
+    #batchRunBtn { align-self: flex-start; }
+    #batchRunBtn:disabled { opacity: .6; }
+
+    /* ===== Batch result overlay ===== */
+    .batch-overlay { position: fixed; inset: 0; z-index: 9998; display: none; flex-direction: column; background: var(--bg); }
+    .batch-overlay.open { display: flex; }
+    .batch-overlay-bar { display: flex; align-items: center; gap: 14px; padding: 7px 12px; border-bottom: 1px solid var(--border); background: var(--surface); }
+    .batch-overlay-bar .title { font-weight: 650; font-size: 13px; max-width: 50%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .batch-overlay-bar .summary { font-size: 12px; color: var(--muted); }
+    .batch-overlay-bar .spacer { flex: 1; }
+    .batch-overlay-bar button { padding: 3px 10px; font-size: 13px; }
+    #batchResultBody { flex: 1; overflow: auto; }
+    .bresult-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+    .bresult-table th {
+      position: sticky; top: 0; text-align: left; padding: 8px 12px;
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      font-weight: 600; font-size: 12px; color: var(--muted); z-index: 1;
+    }
+    .bresult-table td { padding: 7px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    .bresult-table tr.row-main { cursor: pointer; }
+    .bresult-table tr.row-main:hover { background: var(--surface); }
+    .bstatus { display: inline-block; padding: 1px 9px; border-radius: 999px; font-size: 11px; font-weight: 600; border: 1px solid var(--border); white-space: nowrap; }
+    .bstatus.pending { color: var(--muted); }
+    .bstatus.ok { color: var(--brand); }
+    .bstatus.fail, .bstatus.timeout, .bstatus.error { color: var(--danger); }
+    .bdur { color: var(--muted); font-family: ui-monospace, Consolas, monospace; white-space: nowrap; }
+    .bout-cell { padding: 0 !important; }
+    .bout {
+      margin: 0; padding: 10px 14px; background: var(--surface);
+      font-family: ui-monospace, Consolas, monospace; font-size: 12px;
+      white-space: pre-wrap; word-break: break-word;
+      max-height: 340px; overflow: auto; border-bottom: 1px solid var(--border);
+    }
+    .bout.err { color: var(--danger); }
+    .bhost { font-family: ui-monospace, Consolas, monospace; }
+
+    /* Full per-node batch report view */
+    .batch-report-view[hidden] { display: none; }
+    .batch-report-view { flex: 1; min-height: 0; overflow: auto; background: var(--bg); }
+    #batchReportPre {
+      margin: 0; padding: 14px 18px;
+      font-family: ui-monospace, Consolas, monospace; font-size: 12px;
+      line-height: 1.55; color: var(--text); white-space: pre-wrap; word-break: break-word;
+    }
+
+    /* ===== Forward overlay ===== */
+    .fwd-body { flex: 1; overflow: auto; padding: 14px; display: flex; flex-direction: column; gap: 14px; }
+    .fwd-create {
+      border: 1px solid var(--border); border-radius: var(--radius);
+      background: var(--surface); padding: 12px 14px;
+      display: flex; flex-direction: column; gap: 10px;
+    }
+    .fwd-create h3 { margin: 0; font-size: 13px; font-weight: 650; }
+    .fwd-grid { display: grid; grid-template-columns: 1.4fr repeat(3, 1fr); gap: 8px; }
+    .fwd-grid label { display: flex; flex-direction: column; gap: 3px; font-size: 11.5px; color: var(--muted); }
+    .fwd-grid input {
+      font: inherit; font-size: 12.5px; padding: 6px 9px; border-radius: 7px;
+      border: 1px solid var(--border); background: var(--bg); color: var(--text); outline: none;
+    }
+    .fwd-grid input:focus { border-color: var(--brand); }
+    .fwd-create .fwd-actions { display: flex; align-items: center; gap: 10px; }
+    .fwd-create .fwd-msg { font-size: 12px; color: var(--danger); }
+    .fwd-create .fwd-msg.ok { color: var(--brand); }
+    @media (max-width: 720px) { .fwd-grid { grid-template-columns: 1fr 1fr; } }
+
+    .fwd-table { width: 100%; border-collapse: collapse; font-size: 12.5px; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+    .fwd-table th { text-align: left; padding: 8px 12px; background: var(--surface); border-bottom: 1px solid var(--border); font-size: 12px; color: var(--muted); }
+    .fwd-table td { padding: 7px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+    .fwd-table tr:last-child td { border-bottom: none; }
+    .fwd-table .mono { font-family: ui-monospace, Consolas, monospace; }
+    .fwd-table button { padding: 3px 10px; font-size: 11.5px; margin-right: 6px; }
+    .fwd-state { display: inline-block; padding: 1px 9px; border-radius: 999px; font-size: 11px; font-weight: 600; color: var(--brand); border: 1px solid var(--border); }
+  </style>
+  <link rel="stylesheet" href="vendor/xterm.css" />
+</head>
+<body>
+  <h1>
+    <svg class="logo" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M12 2L3 7v10l9 5 9-5V7l-9-5z" fill="#512fc9"/>
+      <path d="M9.2 15.4h6.1v-1.5h-4.3l-.3-2h4.2V8.7h-4.5l-.2-1.2H8.3l.5 3.1h-1v1.8h1.3l.3 2-.2 1z" fill="#fff"/>
+    </svg>
+    Teleport
+  </h1>
+  <p class="subtitle" id="subtitle">teleport.zdiai.com</p>
+
+  <div class="status-card">
+    <span class="badge disconnected" id="stateBadge"><span class="dot"></span><span id="stateText">…</span></span>
+    <div class="meta" id="meta">
+      <span><span data-i18n="cluster">集群</span>：<b id="mCluster">—</b></span>
+      <span><span data-i18n="proxy">代理</span>：<b id="mProxy">—</b></span>
+      <span><span data-i18n="expiry">证书有效期至</span>：<b id="mExpiry">—</b></span>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button id="btnRefresh" type="button">⟳ <span data-i18n="refresh">刷新</span></button>
+    <button id="btnLogout" class="danger" type="button"><span data-i18n="logout">登出</span></button>
+  </div>
+  <p class="hint" id="hint" hidden></p>
+
+  <div class="panel">
+    <div class="panel-head">
+      <h2 data-i18n="resources">资源</h2>
+      <div class="filters" id="filters">
+        <button data-filter="all" class="active" type="button" data-i18n="fAll">全部</button>
+        <button data-filter="node" type="button" data-i18n="fNodes">节点</button>
+        <button data-filter="app" type="button" data-i18n="fApps">应用</button>
+        <button data-filter="kube" type="button" data-i18n="fKube">K8s</button>
+      </div>
+    </div>
+    <div class="search-row">
+      <input id="searchInput" type="search" data-i18n-placeholder="searchPlaceholder" placeholder="搜索资源…" autocomplete="off" />
+      <span class="res-count" id="resCount"></span>
+      <button id="btnProbe" type="button" data-i18n="probe">探活</button>
+    </div>
+    <div id="resourceBody"><div class="loading" data-i18n="loading">正在加载…</div></div>
+  </div>
+
+  <div class="batch-bar" id="batchBar">
+    <div class="batch-bar-row">
+      <span id="batchSelected"></span>
+      <span class="spacer"></span>
+      <button id="batchClearBtn" type="button" data-i18n="clear">清空</button>
+      <button id="batchToggleForm" type="button" data-i18n="batch">批量执行 ▴</button>
+    </div>
+    <div class="batch-form" id="batchForm">
+      <input id="batchCommand" type="text" data-i18n-placeholder="batchCommandPh" autocomplete="off" spellcheck="false" />
+      <div class="batch-opts">
+        <label><span data-i18n="concurrency">并发</span> <input id="batchConcurrency" type="number" value="10" min="1" max="50" /></label>
+        <label><span data-i18n="timeoutSec">超时(秒)</span> <input id="batchTimeout" type="number" value="60" min="1" max="600" /></label>
+        <button id="batchRunBtn" class="primary" type="button" data-i18n="run">执行</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="batch-overlay" id="batchOverlay">
+    <div class="batch-overlay-bar">
+      <span class="title" id="batchOverlayTitle"></span>
+      <span class="summary" id="batchSummary"></span>
+      <span class="spacer"></span>
+      <button id="batchReportBtn" type="button" data-i18n="report">报告</button>
+      <button id="batchCopyReportBtn" type="button" data-i18n="copyReport">复制报告</button>
+      <button id="batchOverlayClose" type="button">✕</button>
+    </div>
+    <div id="batchResultBody"></div>
+    <div class="batch-report-view" id="batchReportView" hidden>
+      <pre id="batchReportPre"></pre>
+    </div>
+  </div>
+
+  <div class="batch-overlay" id="forwardOverlay">
+    <div class="batch-overlay-bar">
+      <span class="title" data-i18n="forwardTitle">端口转发</span>
+      <span class="spacer"></span>
+      <button id="forwardOverlayClose" type="button">✕</button>
+    </div>
+    <div class="fwd-body">
+      <div class="fwd-create">
+        <h3 data-i18n="fwdCreateTitle">新建转发</h3>
+        <div class="fwd-grid">
+          <label><span data-i18n="fwdNode">节点</span>
+            <input id="fwdNode" list="fwdNodeList" autocomplete="off" spellcheck="false" />
+          </label>
+          <label><span data-i18n="fwdLocalPort">本地端口</span>
+            <input id="fwdLocalPort" type="number" min="1" max="65535" placeholder="13306" />
+          </label>
+          <label><span data-i18n="fwdTargetHost">目标地址</span>
+            <input id="fwdTargetHost" value="127.0.0.1" spellcheck="false" />
+          </label>
+          <label><span data-i18n="fwdTargetPort">目标端口</span>
+            <input id="fwdTargetPort" type="number" min="1" max="65535" placeholder="3306" />
+          </label>
+        </div>
+        <div class="fwd-actions">
+          <button id="fwdCreateBtn" class="primary" type="button" data-i18n="fwdStart">启动转发</button>
+          <span class="fwd-msg" id="fwdMsg"></span>
+        </div>
+      </div>
+      <table class="fwd-table">
+        <thead><tr>
+          <th data-i18n="fwdTNode">节点</th><th data-i18n="fwdTMap">转发映射</th>
+          <th data-i18n="fwdTState">状态</th><th data-i18n="fwdTActions">操作</th>
+        </tr></thead>
+        <tbody id="fwdTableBody"></tbody>
+      </table>
+    </div>
+  </div>
+  <datalist id="fwdNodeList"></datalist>
+
+  <div class="term-overlay" id="termOverlay">
+    <div class="term-bar">
+      <span class="term-title" id="termTitle">SSH</span>
+      <button id="snippetToggle" type="button" data-i18n="snippets">片段</button>
+      <button id="termClose" type="button" title="Close">✕</button>
+    </div>
+    <div class="reconnect-bar" id="reconnectBar" hidden>
+      <span id="reconnectMsg"></span>
+      <label><input type="checkbox" id="autoReconnect" /> <span data-i18n="autoReconnect">自动重连</span></label>
+      <button id="reconnectBtn" type="button" data-i18n="reconnect">重连</button>
+    </div>
+    <div class="snippet-bar" id="snippetBar">
+      <div class="snippet-scroll" id="snippetScroll"></div>
+      <div class="snippet-add-row" id="snippetAddRow" hidden>
+        <input id="snippetAddInput" type="text" data-i18n-placeholder="snippetAddPh" autocomplete="off" spellcheck="false" />
+        <button id="snippetAddConfirm" type="button" data-i18n="add">添加</button>
+      </div>
+      <button id="snippetAddBtn" type="button" title="add snippet">＋</button>
+    </div>
+    <div id="termContainer"></div>
+  </div>
+
+  <script src="vendor/xterm.js"></script>
+  <script>
+    const I18N = {
+      "zh-cn": {
+        cluster: "集群", proxy: "代理", expiry: "证书有效期至",
+        refresh: "刷新", logout: "登出",
+        resources: "资源", fAll: "全部", fNodes: "节点", fApps: "应用", fKube: "K8s",
+        loading: "正在加载…", empty: "暂无资源", noMatch: "无匹配资源", noSession: "无活动会话，请在连接上点 “tsh login” 登录。",
+        searchPlaceholder: "搜索资源…",
+        connected: "已连接", disconnected: "未连接", error: "错误",
+        loginHint: "登录请在左侧连接上点 “tsh login”（每次都会重新收集验证码，不保存 OTP）。",
+        expiresIn: "将于 {t} 后过期", expired: "已过期 {t}",
+        ssh: "SSH", forward: "转发", kubeLogin: "注入上下文", kubeEnabled: "Kube 可用",
+        kindNode: "SSH Server", kindApp: "App", kindKube: "Kubernetes",
+        probe: "探活", probing: "探活中", confirming: "慢链路确认中 {n}", batch: "批量执行", clear: "清空", run: "执行",
+        slowBadge: "慢", slowHint: "响应耗时 {s}s",
+        selected: "已选 {n} 个节点",
+        concurrency: "并发", timeoutSec: "超时(秒)",
+        batchCommandPh: "输入要在所有选中节点执行的命令，如 systemctl status nginx",
+        bColHost: "节点", bColStatus: "状态", bColDuration: "耗时",
+        sPending: "等待", sOk: "成功", sFail: "失败", sTimeout: "超时", sError: "错误",
+        bDone: "完成 {ok}/{total}，失败 {fail}",
+        otherGroup: "其他资源",
+        forwardTitle: "端口转发", fwdCreateTitle: "新建转发",
+        fwdNode: "节点", fwdLocalPort: "本地端口", fwdTargetHost: "目标地址", fwdTargetPort: "目标端口",
+        fwdStart: "启动转发", fwdTNode: "节点", fwdTMap: "转发映射", fwdTState: "状态", fwdTActions: "操作",
+        fwdRunning: "运行中", fwdCopy: "复制地址", fwdStop: "停止",
+        fwdCreated: "转发已启动：{url}", fwdNone: "暂无活动转发",
+        kubeInject: "注入", kubeDone: "已注入上下文：{ctx}（kubeconfig: {path}）",
+        snippets: "片段", add: "添加",
+        autoReconnect: "自动重连", reconnect: "重连",
+        connLost: "连接已断开", reconnecting: "正在重新连接…",
+        reconnected: "已重新连接", reconnectFail: "重连失败：{msg}",
+        retryHint: "{n}s 后自动重试（第 {attempt} 次）",
+        autoStopped: "已达最大重试次数，请手动重连",
+        snippetAddPh: "命令片段，以空格结尾则只插入不执行",
+        report: "报告", copyReport: "复制报告", backToTable: "返回表格",
+        rptTitle: "批量执行结果报告",
+        rptCmd: "命令", rptTime: "生成时间",
+        rptStat: "统计：共 {total} 台 · 成功 {ok} · 失败 {fail}",
+        rptDur: "耗时：总 {totalMs}ms · 平均 {avgMs}ms · 最快 {minMs}ms · 最慢 {maxMs}ms",
+        rptDetail: "节点明细",
+        rptNoOutput: "（无输出）"
+      },
+      en: {
+        cluster: "Cluster", proxy: "Proxy", expiry: "Cert valid until",
+        refresh: "Refresh", logout: "Logout",
+        resources: "Resources", fAll: "All", fNodes: "Nodes", fApps: "Apps", fKube: "K8s",
+        loading: "Loading…", empty: "No resources", noMatch: "No matching resources", noSession: "No active session — click “tsh login” on the connection.",
+        searchPlaceholder: "Search resources…",
+        connected: "Connected", disconnected: "Disconnected", error: "Error",
+        loginHint: "To log in, click “tsh login” on the connection (OTP is collected fresh every time).",
+        expiresIn: "expires in {t}", expired: "expired {t} ago",
+        ssh: "SSH", forward: "Forward", kubeLogin: "Inject context", kubeEnabled: "Kube enabled",
+        kindNode: "SSH Server", kindApp: "App", kindKube: "Kubernetes",
+        probe: "Probe", probing: "Probing", confirming: "Confirming {n}", batch: "Batch run", clear: "Clear", run: "Run",
+        slowBadge: "slow", slowHint: "response took {s}s",
+        selected: "{n} nodes selected",
+        concurrency: "Concurrency", timeoutSec: "Timeout(s)",
+        batchCommandPh: "Command to run on every selected node, e.g. systemctl status nginx",
+        bColHost: "Node", bColStatus: "Status", bColDuration: "Duration",
+        sPending: "Pending", sOk: "OK", sFail: "Failed", sTimeout: "Timeout", sError: "Error",
+        bDone: "Done {ok}/{total}, {fail} failed",
+        otherGroup: "Other resources",
+        forwardTitle: "Port forwarding", fwdCreateTitle: "New forward",
+        fwdNode: "Node", fwdLocalPort: "Local port", fwdTargetHost: "Target host", fwdTargetPort: "Target port",
+        fwdStart: "Start forward", fwdTNode: "Node", fwdTMap: "Mapping", fwdTState: "State", fwdTActions: "Actions",
+        fwdRunning: "running", fwdCopy: "Copy URL", fwdStop: "Stop",
+        fwdCreated: "Forward started: {url}", fwdNone: "No active forwards",
+        kubeInject: "Inject", kubeDone: "Context injected: {ctx} (kubeconfig: {path})",
+        snippets: "Snippets", add: "Add",
+        autoReconnect: "Auto reconnect", reconnect: "Reconnect",
+        connLost: "Connection lost", reconnecting: "Reconnecting…",
+        reconnected: "Reconnected", reconnectFail: "Reconnect failed: {msg}",
+        retryHint: "auto retry in {n}s (attempt {attempt})",
+        autoStopped: "max retries reached, please reconnect manually",
+        snippetAddPh: "Command snippet; trailing space inserts without running",
+        report: "Report", copyReport: "Copy report", backToTable: "Back to table",
+        rptTitle: "Batch execution report",
+        rptCmd: "Command", rptTime: "Generated",
+        rptStat: "Stats: {total} total · {ok} ok · {fail} failed",
+        rptDur: "Duration: total {totalMs}ms · avg {avgMs}ms · min {minMs}ms · max {maxMs}ms",
+        rptDetail: "Per-node detail",
+        rptNoOutput: "(no output)"
+      }
+    };
+
+    let t = I18N["zh-cn"];
+    let connectionId = null;
+    let filter = "all";
+    let search = "";
+    let resources = [];
+    let busy = false;
+
+    // ---- Batch execution / liveness state ----
+    let selectedHosts = new Set();    // checked node hostnames
+    let onlineMap = new Map();        // hostname -> reachable (after probe)
+    let slowHosts = new Map();        // hostname -> best duration ms for slow link
+    let probed = false;
+    let collapsedGroups = new Set();  // collapsed group names
+    let activeBatchId = null;
+    let activeProbeId = null;
+    let batchRows = new Map();        // hostname -> result row
+    let batchExpanded = new Set();    // hostnames with output expanded
+    let batchRunning = false;
+
+    const $ = (sel) => document.querySelector(sel);
+
+    function applyI18n() {
+      document.querySelectorAll("[data-i18n]").forEach((el) => {
+        const key = el.dataset.i18n;
+        if (t[key]) el.textContent = t[key];
+      });
+      document.querySelectorAll("[data-i18n-placeholder]").forEach((el) => {
+        const key = el.dataset.i18nPlaceholder;
+        if (t[key]) el.placeholder = t[key];
+      });
+    }
+
+    function fmtDuration(ms) {
+      const s = Math.abs(Math.floor(ms / 1000));
+      const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+      if (h >= 24) {
+        const d = Math.floor(h / 24);
+        return `${d}d ${h % 24}h`;
+      }
+      if (h > 0) return `${h}h ${m}m`;
+      return `${m}m`;
+    }
+
+    function setBadge(state) {
+      const badge = $("#stateBadge");
+      badge.className = `badge ${state}`;
+      const map = { connected: t.connected, disconnected: t.disconnected, error: t.error };
+      $("#stateText").textContent = map[state] || state;
+    }
+
+    function renderStatus(status) {
+      if (!status) {
+        setBadge("disconnected");
+        $("#mCluster").textContent = "—";
+        $("#mProxy").textContent = "—";
+        $("#mExpiry").textContent = "—";
+        return;
+      }
+      setBadge("connected");
+      const sObj = status.status || status;
+      $("#mCluster").textContent = sObj.cluster || status.cluster || "—";
+      $("#mProxy").textContent = sObj.proxy_url || status.proxy_url || "—";
+      const expiry = sObj.valid_until || sObj.expires || status.expires || "";
+      if (expiry) {
+        const ms = new Date(expiry).getTime() - Date.now();
+        const rel = ms > 0 ? t.expiresIn.replace("{t}", fmtDuration(ms)) : t.expired.replace("{t}", fmtDuration(ms));
+        $("#mExpiry").textContent = `${expiry} (${rel})`;
+      } else {
+        $("#mExpiry").textContent = "—";
+      }
+    }
+
+    const KIND_SVG = {
+      node: '<svg class="kind-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="13" width="18" height="7" rx="1.5"/><path d="M7 7.5h.01M7 16.5h.01"/></svg>',
+      app: '<svg class="kind-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 9h6M9 13h4"/></svg>',
+      kube: '<svg class="kind-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z"/><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5"/></svg>'
+    };
+
+    function actionsFor(kind) {
+      if (kind === "node") {
+        return [
+          { act: "ssh", label: t.ssh },
+          { act: "forward", label: t.forwardTitle },
+        ];
+      }
+      if (kind === "kube") return [{ act: "kube", label: t.kubeInject }];
+      return [];
+    }
+
+    // ===== Smart family grouping =====
+    // A node "family" is the meaningful letter prefix shared by related ships:
+    //   NewAchievement / NewFrontier  -> "New"
+    //   LianHe5 / LianHe11            -> "LianHe" (trailing serial dropped)
+    //   CspcAries / CspcLeo           -> "Cspc"
+    // Discovery is fully data-driven — no family list is hard-coded:
+    //   1) take the substring before the first "-"
+    //   2) strip a trailing numeric serial (LianHe11 -> LianHe)
+    //   3) merge canons sharing a prefix that ends on a CamelCase boundary
+    //      (the next char must be uppercase), taking the LONGEST such prefix.
+    // The boundary rule prevents false merges like "Ch" (CheraAmity vs
+    // ChinaChampion) or "Xi"; requiring a LEADING prefix means
+    // ShanDongNewEra never joins the "New" family.
+    function rawPrefix(name) {
+      const i = (name || "").indexOf("-");
+      return i > 0 ? name.slice(0, i) : (name || "");
+    }
+    function stripTrailingDigits(s) {
+      return s.replace(/\d+$/, "");
+    }
+
+    /// Build hostname -> family-group map for the given node resources.
+    function buildHostGroupMap(nodes) {
+      const canonOf = new Map();
+      const canons = [];
+      for (const r of nodes) {
+        const canon = stripTrailingDigits(rawPrefix(r.name));
+        canonOf.set(r.name, canon);
+        if (!canons.includes(canon)) canons.push(canon);
+      }
+
+      // Family of a canon = longest prefix P shared with some OTHER canon where
+      // the char right after P is uppercase (a CamelCase word boundary).
+      function familyOf(canon) {
+        let best = null;
+        for (const other of canons) {
+          if (other === canon) continue;
+          const max = Math.min(canon.length, other.length);
+          let p = 0;
+          while (p < max && canon[p] === other[p]) p++;
+          if (p >= 2 && p < canon.length) {
+            const ch = canon[p];
+            if (ch >= "A" && ch <= "Z" && (best === null || p > best.length)) {
+              best = canon.slice(0, p);
+            }
+          }
+        }
+        return best === null ? canon : best;
+      }
+
+      const map = new Map();
+      for (const r of nodes) map.set(r.name, familyOf(canonOf.get(r.name)));
+      return map;
+    }
+
+    let hostGroupMap = new Map();
+    function groupKey(r) {
+      if (r.kind === "node") {
+        return (
+          hostGroupMap.get(r.name) ||
+          stripTrailingDigits(rawPrefix(r.name)) ||
+          t.otherGroup
+        );
+      }
+      return t.otherGroup;
+    }
+
+    /// Tooltip for a slow-link badge (value is a backend duration in ms).
+    function slowTitle(r) {
+      const d = slowHosts.get(r.name);
+      if (d == null) return "";
+      return (t.slowHint || "响应耗时 {s}s").replace(
+        "{s}",
+        (d / 1000).toFixed(1)
+      );
+    }
+
+    function renderResources() {
+      const body = $("#resourceBody");
+      // Family index is computed from every node (not the filtered list) so a
+      // node's group never changes while searching or toggling kind filters.
+      hostGroupMap = buildHostGroupMap(resources.filter((r) => r.kind === "node"));
+      const q = search.trim().toLowerCase();
+      const list = resources.filter((r) => {
+        if (filter !== "all" && r.kind !== filter) return false;
+        if (!q) return true;
+        const haystack = [r.name, r.address, r.kind]
+          .concat(r.labels && typeof r.labels === "object"
+            ? Object.entries(r.labels).map(([k, v]) => `${k}: ${v}`)
+            : [])
+          .join(" ")
+          .toLowerCase();
+        return haystack.includes(q);
+      });
+      $("#resCount").textContent = q ? `${list.length} / ${resources.length}` : String(resources.length);
+      if (list.length === 0) {
+        body.innerHTML = `<div class="empty">${q ? t.noMatch : t.empty}</div>`;
+        return;
+      }
+
+      // Bucket into ordered groups.
+      const groupItems = new Map();
+      for (const r of list) {
+        const gk = groupKey(r);
+        if (!groupItems.has(gk)) groupItems.set(gk, []);
+        groupItems.get(gk).push(r);
+      }
+      const groupNames = [...groupItems.keys()]
+        .sort((a, b) => a.localeCompare(b));
+      // Other resources (apps/kube) float to the end.
+      if (groupNames.includes(t.otherGroup)) {
+        groupNames.splice(groupNames.indexOf(t.otherGroup), 1);
+        groupNames.push(t.otherGroup);
+      }
+
+      // Flat index backing the card checkboxes (event handlers close over it).
+      const cardList = [];
+      const kindLabel = { node: t.kindNode, app: t.kindApp, kube: t.kindKube };
+      __groupSlot = 0;
+
+      const sectionsHtml = groupNames.map((gk) => {
+        const items = groupItems.get(gk);
+        const nodeItems = items.filter((r) => r.kind === "node");
+        let countHtml;
+        if (probed && nodeItems.length) {
+          const down = nodeItems.filter((r) => onlineMap.get(r.name) === false).length;
+          const up = nodeItems.length - down;
+          countHtml = down
+            ? `<span class="group-count">${up}/${nodeItems.length} <span class="down">↓${down}</span></span>`
+            : `<span class="group-count">${up}/${nodeItems.length}</span>`;
+        } else {
+          countHtml = `<span class="group-count">${nodeItems.length || items.length}</span>`;
+        }
+
+        // Group checkbox state over visible, selectable (online) nodes only.
+        const selectable = nodeItems.filter(
+          (r) => !probed || onlineMap.get(r.name) !== false);
+        const allSel = selectable.length > 0 &&
+          selectable.every((r) => selectedHosts.has(r.name));
+
+        const cards = items.map((r) => {
+          const idx = cardList.length;
+          cardList.push(r);
+          const labels = r.labels && typeof r.labels === "object"
+            ? `<div class="card-tags">${Object.entries(r.labels)
+                .filter(([k, v]) => String(v) !== (r.name || ""))
+                .slice(0, 3)
+                .map(([k, v]) => `<span class="tag">${k}: ${v}</span>`).join("")}</div>`
+            : "";
+          const acts = actionsFor(r.kind);
+          const actions = acts.length
+            ? `<div class="card-actions">
+                ${acts.map((a) =>
+                  `<button type="button" data-act="${a.act}" data-card-idx="${idx}">${a.label}</button>`
+                ).join("")}
+              </div>`
+            : "";
+          const isNode = r.kind === "node";
+          const offline = isNode && probed && onlineMap.get(r.name) === false;
+          const slow = !offline && isNode && probed && slowHosts.has(r.name);
+          const check = isNode
+            ? `<label class="card-check"><input type="checkbox" data-card-check="${idx}" ${offline ? "disabled" : ""}></label>`
+            : "";
+          return `<div class="res-card${offline ? " offline" : ""}">
+            <div class="card-top">
+              ${check}
+              ${KIND_SVG[r.kind] || ""}
+              <div class="card-name">
+                <div class="name" data-name-idx="${idx}"></div>
+                <span class="kind-tag">${kindLabel[r.kind] || r.kind}</span>${offline ? `<span class="offline-badge">${t.sFail === "失败" ? "离线" : "offline"}</span>` : ""}${slow ? `<span class="slow-badge" title="${slowTitle(r)}">${t.slowBadge}</span>` : ""}
+              </div>
+            </div>
+            ${labels}
+            ${actions}
+          </div>`;
+        }).join("");
+
+        return `<section class="group-section${collapsedGroups.has(gk) ? " collapsed" : ""}">
+          <div class="group-head" data-group-head="${gk}">
+            <span class="group-caret">${collapsedGroups.has(gk) ? "▶" : "▼"}</span>
+            <span class="group-title" data-group-title="${idx_group(gk)}"></span>
+            ${countHtml}
+            ${selectable.length
+              ? `<label class="group-check" data-group-check-label><input type="checkbox" data-group-select="${gk}" ${allSel ? "checked" : ""}></label>`
+              : ""}
+          </div>
+          <div class="resource-grid group-grid">${cards}</div>
+        </section>`;
+      }).join("");
+
+      body.innerHTML = sectionsHtml;
+
+      // Group titles via textContent (group names come from tsh data).
+      body.querySelectorAll("[data-group-title]").forEach((el) => {
+        el.textContent = groupNames[Number(el.dataset.groupTitle)];
+      });
+      // Node names via textContent to avoid HTML injection.
+      body.querySelectorAll("[data-name-idx]").forEach((el) => {
+        const r = cardList[Number(el.dataset.nameIdx)];
+        el.textContent = r.name || "—";
+        el.title = r.name || "";
+      });
+      // Card checkboxes.
+      body.querySelectorAll("input[data-card-check]").forEach((input) => {
+        const r = cardList[Number(input.dataset.cardCheck)];
+        input.checked = selectedHosts.has(r.name);
+        input.addEventListener("click", (e) => e.stopPropagation());
+        input.addEventListener("change", () => {
+          if (input.checked) selectedHosts.add(r.name);
+          else selectedHosts.delete(r.name);
+          updateBatchBar();
+          // Reflect the group checkbox without a full re-render.
+          syncGroupCheckbox(body, r);
+        });
+      });
+      // Collapse toggles.
+      body.querySelectorAll(".group-head").forEach((head) => {
+        head.addEventListener("click", (e) => {
+          if (e.target.closest("input, .group-check")) return;
+          const gk = head.dataset.groupHead;
+          if (collapsedGroups.has(gk)) collapsedGroups.delete(gk);
+          else collapsedGroups.add(gk);
+          renderResources();
+        });
+      });
+      // Group-wide select.
+      body.querySelectorAll("input[data-group-select]").forEach((input) => {
+        input.addEventListener("click", (e) => e.stopPropagation());
+        input.addEventListener("change", () => {
+          const gk = input.dataset.groupSelect;
+          groupItems
+            .get(gk)
+            .filter((r) => r.kind === "node" && (!probed || onlineMap.get(r.name) !== false))
+            .forEach((r) => {
+              if (input.checked) selectedHosts.add(r.name);
+              else selectedHosts.delete(r.name);
+            });
+          renderResources();
+          updateBatchBar();
+        });
+      });
+      // Action buttons.
+      body.querySelectorAll("button[data-act]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const r = cardList[Number(btn.dataset.cardIdx)];
+          runCardAction(btn.dataset.act, r);
+        });
+      });
+    }
+
+    /// Encode a group name into a safe numeric slot index (the data attribute
+    /// must stay injection-free); we only need identity within this render.
+    let __groupSlot = 0;
+    function idx_group(_gk) { return __groupSlot++; }
+
+    /// Recompute one group's checkbox state after a card toggle.
+    function syncGroupCheckbox(body, changed) {
+      const gk = groupKey(changed);
+      const input = body.querySelector(`input[data-group-select="${gk}"]`);
+      if (!input) return;
+      // Count the rendered, selectable cards belonging to this family.
+      const checks = body.querySelectorAll("input[data-card-check]");
+      let total = 0, checked = 0;
+      checks.forEach((c) => {
+        if (c.disabled) return;
+        const nameEl = c.closest(".res-card").querySelector("[data-name-idx]");
+        if (nameEl && hostGroupMap.get(nameEl.textContent) === gk) {
+          total++;
+          if (c.checked) checked++;
+        }
+      });
+      input.checked = total > 0 && checked === total;
+    }
+
+    async function callSidecar(method, params, timeoutMs) {
+      return window.dbxPlugin.invoke(method, params, timeoutMs ? { timeoutMs } : {});
+    }
+
+    async function refresh() {
+      if (busy) return;
+      busy = true;
+      $("#btnRefresh").disabled = true;
+      try {
+        const [statusRes, listRes] = await Promise.all([
+          callSidecar("connection/action", { connectionId, action: { id: "refresh" } }, 15000)
+            .catch((e) => ({ error: String(e.message || e) })),
+          callSidecar("teleport/listResources", { connectionId }, 15000)
+            .catch((e) => ({ success: false, resources: [], message: String(e.message || e) }))
+        ]);
+
+        const hasStatus = statusRes && statusRes.success && statusRes.status;
+        renderStatus(hasStatus ? statusRes : null);
+
+        const lr = listRes || {};
+        resources = Array.isArray(lr.resources) ? lr.resources : [];
+        renderResources();
+
+        const hint = $("#hint");
+        if (resources.length === 0 && lr.message) {
+          // Diagnostic: surface the backend message so we can see why the list
+          // is empty (expired cert vs tsh subprocess failure vs empty result).
+          hint.hidden = false;
+          hint.textContent = `listResources: ${lr.message}`;
+        } else if (!hasStatus) {
+          hint.hidden = false;
+          hint.textContent = t.loginHint;
+        } else {
+          hint.hidden = true;
+        }
+      } catch (e) {
+        const hint = $("#hint");
+        hint.hidden = false;
+        hint.textContent = `refresh error: ${String((e && e.message) || e)}`;
+      } finally {
+        busy = false;
+        $("#btnRefresh").disabled = false;
+      }
+    }
+
+    // -----------------------------------------------------------------------
+    // SSH terminal (xterm.js overlay + framed binary channels)
+    // -----------------------------------------------------------------------
+    let term = null;
+    let termSessionId = null;   // active session id fed to sendBinary/notify
+    let termNodeName = null;    // hostname, needed to reopen after a drop
+    let termDone = false;       // true once the backend sent its end frame
+    let lastSeq = 0;            // monotonic dedup against out-channel frames
+    const pendingOut = new Map(); // sid -> frames buffered before the term opens
+
+    // Reconnect state.
+    let autoReconnectOn = false;
+    let reconnectTimer = null;
+    let reconnectAttempts = 0;
+    let reconnectInFlight = false;
+    const MAX_RECONNECT_ATTEMPTS = 5;
+
+    function isTerminalChannel(ch) {
+      return typeof ch === "string" && ch.startsWith("ssh/terminal/out/");
+    }
+
+    function onTerminalFrame(sid, stream, seq, payload) {
+      if (termSessionId === sid && term && !termDone) {
+        if (seq > lastSeq) {
+          lastSeq = seq;
+          if (stream === 2) {
+            handleSessionEnd();
+          } else {
+            try { term.write(payload); } catch (e) {}
+          }
+        }
+      } else {
+        if (!pendingOut.has(sid)) pendingOut.set(sid, []);
+        pendingOut.get(sid).push({ seq, stream, payload });
+      }
+    }
+
+    function flushPendingFrames(sid) {
+      const queued = pendingOut.get(sid) || [];
+      pendingOut.delete(sid);
+      queued
+        .sort((a, b) => a.seq - b.seq)
+        .forEach(({ seq, stream, payload }) => {
+          if (seq > lastSeq) {
+            lastSeq = seq;
+            if (stream === 2) {
+              handleSessionEnd();
+            } else {
+              try { term.write(payload); } catch (e) {}
+            }
+          }
+        });
+    }
+
+    function sendResize() {
+      if (!termSessionId || termDone || !term) return;
+      const cols = term.cols, rows = term.rows;
+      if (!cols || !rows || isNaN(cols) || isNaN(rows)) return;
+      window.dbxPlugin
+        .notify("ssh/terminal/resize", { sessionId: termSessionId, cols, rows })
+        .catch(() => {});
+    }
+
+    // Version-safe fit: measure one glyph in the terminal's font and derive
+    // cols/rows from the container size. Avoids the fragile window.FitAddon
+    // global and xterm's version-specific addon packaging.
+    function fitTerminal() {
+      if (!term) return;
+      const container = $("#termContainer");
+      if (!container) return;
+      const width = container.clientWidth;
+      const height = container.clientHeight;
+      if (!width || !height) return;
+      const fontFamily = (term.options && term.options.fontFamily) || 'Consolas, "Cascadia Mono", monospace';
+      const fontSize = (term.options && term.options.fontSize) || 13;
+      let cw = Math.round(fontSize * 0.6), ch = Math.round(fontSize * 1.2);
+      try {
+        const probe = document.createElement("span");
+        probe.textContent = "W";
+        probe.setAttribute("aria-hidden", "true");
+        probe.style.cssText = `position:absolute;visibility:hidden;top:0;left:0;white-space:pre;line-height:normal;font-family:${fontFamily};font-size:${fontSize}px;`;
+        container.appendChild(probe);
+        const rect = probe.getBoundingClientRect();
+        if (rect && rect.width > 0 && rect.height > 0) { cw = rect.width; ch = rect.height; }
+        container.removeChild(probe);
+      } catch (e) {}
+      term.resize(Math.max(2, Math.floor(width / cw)), Math.max(1, Math.floor(height / ch)));
+    }
+
+    function showTermError(msg) {
+      const c = $("#termContainer");
+      if (c) {
+        c.style.display = "block";
+        c.style.padding = "14px 16px";
+        c.style.fontFamily = "ui-monospace, Consolas, monospace";
+        c.style.fontSize = "13px";
+        c.style.color = "#9c2f1f";
+        c.style.background = "#f6f1e7";
+        c.textContent = `[term error] ${msg}`;
+      }
+      try { window.dbxPlugin.copy(String(msg)); } catch (e) {}
+    }
+
+    function openTerminalOverlay() {
+      const overlay = $("#termOverlay");
+      overlay.classList.add("open");
+      try {
+        if (!window.Terminal || typeof window.Terminal !== "function") {
+          throw new Error("xterm Terminal unavailable");
+        }
+        term = new window.Terminal({
+          cursorBlink: true,
+          fontSize: 13,
+          fontFamily: 'Consolas, "Cascadia Mono", monospace',
+          theme: { background: "#f6f1e7", foreground: "#3b3021", cursor: "#b5791f", selectionBackground: "#d9c9a3" },
+          scrollback: 5000,
+          allowTransparency: false
+        });
+        term.open($("#termContainer"));
+        fitTerminal();
+        term.focus();
+
+        term.onData((data) => {
+          if (termSessionId && !termDone) {
+            // sendBinary treats a string as already-base64 (the host decodes it
+            // again), so raw keystrokes would be mangled. Send UTF-8 bytes as a
+            // Uint8Array so they reach the pty verbatim.
+            let bytes;
+            try { bytes = new TextEncoder().encode(data); } catch (e) { bytes = new Uint8Array(data.length); for (let i = 0; i < data.length; i++) bytes[i] = data.charCodeAt(i) & 0xff; }
+            window.dbxPlugin.sendBinary(`ssh/terminal/in/${termSessionId}`, bytes);
+          }
+        });
+        term.onResize(() => sendResize());
+        new ResizeObserver(() => {
+          try { fitTerminal(); sendResize(); } catch (e) {}
+        }).observe($("#termContainer"));
+      } catch (e) {
+        term = null;
+        showTermError(String((e && e.message) || e));
+      }
+    }
+
+    function closeTerminalOverlay() {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+      reconnectInFlight = false;
+      reconnectAttempts = 0;
+      if (termSessionId) {
+        window.dbxPlugin.notify("ssh/terminal/close", { sessionId: termSessionId }).catch(() => {});
+      }
+      if (term) { try { term.dispose(); } catch (e) {} }
+      term = null;
+      termSessionId = null;
+      termNodeName = null;
+      termDone = false;
+      lastSeq = 0;
+      $("#reconnectBar").hidden = true;
+      $("#termOverlay").classList.remove("open");
+    }
+
+    // -----------------------------------------------------------------------
+    // Reconnect on dropped links
+    // -----------------------------------------------------------------------
+    function handleSessionEnd() {
+      if (termDone) return;
+      termDone = true;
+      try { term.write("\r\n\x1b[90m[" + t.connLost + "]\x1b[0m\r\n"); } catch (e) {}
+      reconnectAttempts = 0;
+      const bar = $("#reconnectBar");
+      bar.hidden = false;
+      $("#reconnectMsg").textContent = t.connLost;
+      if (autoReconnectOn && termNodeName) {
+        scheduleReconnect(2000, 1);
+      }
+    }
+
+    function scheduleReconnect(delayMs, attempt) {
+      clearTimeout(reconnectTimer);
+      $("#reconnectBar").hidden = false;
+      $("#reconnectMsg").textContent =
+        t.retryHint.replace("{n}", String(Math.round(delayMs / 1000)))
+          .replace("{attempt}", String(attempt));
+      reconnectTimer = setTimeout(reconnectSsh, delayMs);
+    }
+
+    async function reconnectSsh() {
+      if (reconnectInFlight || !termNodeName) return;
+      reconnectInFlight = true;
+      clearTimeout(reconnectTimer);
+      try { term.write("\x1b[33m[" + t.reconnecting + "]\x1b[0m\r\n"); } catch (e) {}
+      try {
+        const res = await callSidecar(
+          "contextMenu/io.zdiai.teleport.ssh",
+          { connectionId, name: termNodeName },
+          25000
+        );
+        const sid = res && (res.sessionId || res.session_id);
+        if (!sid) throw new Error("missing session id");
+        termSessionId = sid;
+        termDone = false;
+        lastSeq = 0;
+        reconnectAttempts = 0;
+        try { term.write("\x1b[32m[" + t.reconnected + "]\x1b[0m\r\n"); } catch (e) {}
+        $("#reconnectBar").hidden = true;
+        flushPendingFrames(sid);
+        setTimeout(sendResize, 80);
+        try { term.focus(); } catch (e) {}
+      } catch (e) {
+        reconnectAttempts++;
+        const msg = String((e && e.message) || e);
+        try {
+          term.write("\x1b[31m[" + t.reconnectFail.replace("{msg}", msg) + "]\x1b[0m\r\n");
+        } catch (er) {}
+        if (autoReconnectOn && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+          // Backoff: 3s, 5s, 8s, 10s, 10s.
+          const backoff = [3000, 5000, 8000, 10000, 10000][reconnectAttempts - 1] || 10000;
+          scheduleReconnect(backoff, reconnectAttempts + 1);
+        } else {
+          $("#reconnectBar").hidden = false;
+          $("#reconnectMsg").textContent =
+            autoReconnectOn ? t.autoStopped : t.reconnectFail.replace("{msg}", msg);
+        }
+      } finally {
+        reconnectInFlight = false;
+      }
+    }
+
+    // -----------------------------------------------------------------------
+    // Quick command snippets
+    // -----------------------------------------------------------------------
+    const BUILTIN_SNIPPETS = [
+      "uptime", "df -h", "free -m", "docker ps", "docker ps -a",
+      "ss -tlnp", "ps aux", "ip addr", "last -n 10", "dmesg | tail -30",
+      "ls -lht", "systemctl status ", "journalctl -u ", "tail -f ", "grep -rn ",
+    ];
+    const SNIPPET_STORE_KEY = "dbx_tp_snippets_v1";
+    let customSnippets = loadCustomSnippets();
+
+    function loadCustomSnippets() {
+      try {
+        const raw = localStorage.getItem(SNIPPET_STORE_KEY);
+        const arr = raw ? JSON.parse(raw) : [];
+        return Array.isArray(arr)
+          ? arr.filter((s) => typeof s === "string" && s.length <= 200)
+          : [];
+      } catch (e) {
+        return [];
+      }
+    }
+    function persistCustomSnippets() {
+      try {
+        localStorage.setItem(SNIPPET_STORE_KEY, JSON.stringify(customSnippets));
+      } catch (e) {
+        // Sandbox may deny storage; custom snippets then live only this session.
+      }
+    }
+
+    function renderSnippets() {
+      const scroll = $("#snippetScroll");
+      scroll.innerHTML = "";
+      const buildChip = (text, custom) => {
+        const chip = document.createElement("button");
+        chip.type = "button";
+        chip.className = "snippet-chip" + (custom ? " custom" : "");
+        const label = document.createElement("span");
+        label.textContent = text;
+        chip.title = text.slice(-1) === " "
+          ? (t.snippetAddPh ? "点击插入，不自动执行" : "insert only")
+          : "click to run";
+        chip.appendChild(label);
+        chip.addEventListener("click", () => sendSnippet(text));
+        if (custom) {
+          const x = document.createElement("span");
+          x.className = "chip-x";
+          x.textContent = "×";
+          x.addEventListener("click", (e) => {
+            e.stopPropagation();
+            customSnippets = customSnippets.filter((s) => s !== text);
+            persistCustomSnippets();
+            renderSnippets();
+          });
+          chip.appendChild(x);
+        }
+        scroll.appendChild(chip);
+      };
+      BUILTIN_SNIPPETS.forEach((s) => buildChip(s, false));
+      customSnippets.forEach((s) => buildChip(s, true));
+    }
+
+    /// Send a snippet to the live PTY. A trailing space means "insert and let
+    /// me complete the arguments"; otherwise the command is run immediately.
+    function sendSnippet(text) {
+      if (!term) return;
+      if (!termSessionId || termDone) {
+        try { term.focus(); } catch (e) {}
+        return;
+      }
+      try {
+        const enc = new TextEncoder();
+        window.dbxPlugin.sendBinary(`ssh/terminal/in/${termSessionId}`, enc.encode(text));
+        if (text.slice(-1) !== " ") {
+          window.dbxPlugin.sendBinary(`ssh/terminal/in/${termSessionId}`, enc.encode("\r"));
+        }
+        term.focus();
+      } catch (e) {}
+    }
+
+    async function openSshTerminal(name) {
+      if (!window.Terminal || typeof window.Terminal !== "function") {
+        alert("xterm.js failed to load");
+        return;
+      }
+      let res;
+      try {
+        res = await callSidecar("contextMenu/io.zdiai.teleport.ssh", { connectionId, name }, 20000);
+      } catch (e) {
+        window.dbxPlugin.copy(String(e.message || e));
+        return;
+      }
+      const sid = res && (res.sessionId || res.session_id);
+      if (!sid) {
+        window.dbxPlugin.copy(JSON.stringify(res));
+        return;
+      }
+      $("#termTitle").textContent = `SSH — ${name}`;
+      termSessionId = sid;
+      termNodeName = name;
+      termDone = false;
+      lastSeq = 0;
+      clearTimeout(reconnectTimer);
+      reconnectAttempts = 0;
+      $("#reconnectBar").hidden = true;
+      openTerminalOverlay();
+      renderSnippets();
+      flushPendingFrames(sid);
+      setTimeout(sendResize, 80);
+    }
+
+    async function runCardAction(act, r) {
+      if (act === "ssh") {
+        await openSshTerminal(r.name);
+        return;
+      }
+      if (act === "forward") {
+        openForwardOverlay(r.name);
+        return;
+      }
+      if (act === "kube") {
+        await kubeLogin(r.name);
+        return;
+      }
+    }
+
+    // ---------------------------------------------------------------------
+    // Port forwarding (SSH local -L forwards)
+    // ---------------------------------------------------------------------
+    let fwdBusy = false;
+
+    /// Populate the node datalist from currently loaded node resources.
+    function populateNodeDatalist() {
+      const dl = $("#fwdNodeList");
+      const names = resources
+        .filter((r) => r.kind === "node")
+        .map((r) => r.name);
+      dl.innerHTML = names.map(() => "<option>").join("");
+      // option values assigned via DOM to avoid any HTML injection.
+      [...dl.options].forEach((opt, i) => { opt.value = names[i]; });
+    }
+
+    function openForwardOverlay(prefillNode) {
+      populateNodeDatalist();
+      if (prefillNode) $("#fwdNode").value = prefillNode;
+      $("#forwardOverlay").classList.add("open");
+      $("#fwdMsg").textContent = "";
+      refreshForwards();
+    }
+
+    async function createForward() {
+      if (fwdBusy) return;
+      const node = $("#fwdNode").value.trim();
+      const localPort = parseInt($("#fwdLocalPort").value, 10);
+      const targetHost = $("#fwdTargetHost").value.trim() || "127.0.0.1";
+      const targetPort = parseInt($("#fwdTargetPort").value, 10);
+      const msg = $("#fwdMsg");
+      msg.classList.remove("ok");
+      if (!node) { msg.textContent = t.sError + ": node"; return; }
+      if (!(localPort >= 1 && localPort <= 65535)) {
+        msg.textContent = t.sError + ": localPort"; return;
+      }
+      if (!(targetPort >= 1 && targetPort <= 65535)) {
+        msg.textContent = t.sError + ": targetPort"; return;
+      }
+
+      fwdBusy = true;
+      $("#fwdCreateBtn").disabled = true;
+      msg.textContent = "";
+      try {
+        // Backend waits 2s to confirm the tunnel is actually up.
+        const res = await callSidecar(
+          "teleport/forwardStart",
+          { connectionId, node, localPort, targetHost, targetPort },
+          30000
+        );
+        msg.classList.add("ok");
+        msg.textContent = t.fwdCreated.replace("{url}", res.local_url);
+        await refreshForwards();
+      } catch (e) {
+        msg.textContent = String((e && e.message) || e);
+      } finally {
+        fwdBusy = false;
+        $("#fwdCreateBtn").disabled = false;
+      }
+    }
+
+    async function stopForward(id) {
+      try {
+        await callSidecar("teleport/forwardStop", { id }, 10000);
+        // The monitor thread also emits forward/state; refresh right away.
+        await refreshForwards();
+      } catch (e) {
+        const msg = $("#fwdMsg");
+        msg.classList.remove("ok");
+        msg.textContent = String((e && e.message) || e);
+      }
+    }
+
+    async function refreshForwards() {
+      let res;
+      try {
+        res = await callSidecar("teleport/forwardList", {}, 10000);
+      } catch (e) {
+        return;
+      }
+      renderFwdTable((res && res.forwards) || []);
+    }
+
+    function renderFwdTable(forwards) {
+      const body = $("#fwdTableBody");
+      if (!forwards.length) {
+        body.innerHTML = `<tr><td colspan="4" style="color:var(--muted)">${t.fwdNone}</td></tr>`;
+        return;
+      }
+      // Stable order: newest first is friendlier; keep by node name sort.
+      forwards = [...forwards].sort((a, b) =>
+        String(b.started_at).localeCompare(String(a.started_at)));
+
+      body.innerHTML = forwards.map((f, i) => `
+        <tr>
+          <td class="mono" data-node="${i}"></td>
+          <td class="mono" data-map="${i}"></td>
+          <td><span class="fwd-state">${t.fwdRunning}</span></td>
+          <td>
+            <button type="button" data-copy="${i}">${t.fwdCopy}</button>
+            <button type="button" data-stop="${i}">${t.fwdStop}</button>
+          </td>
+        </tr>`).join("");
+
+      // All values through textContent — no HTML injection from tsh data.
+      body.querySelectorAll("[data-node]").forEach((el) => {
+        el.textContent = forwards[Number(el.dataset.node)].node;
+      });
+      body.querySelectorAll("[data-map]").forEach((el) => {
+        const f = forwards[Number(el.dataset.map)];
+        el.textContent = `${f.bind}:${f.local_port} → ${f.target_host}:${f.target_port}`;
+      });
+      body.querySelectorAll("[data-copy]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const f = forwards[Number(btn.dataset.copy)];
+          window.dbxPlugin.copy(f.local_url);
+        });
+      });
+      body.querySelectorAll("[data-stop]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          stopForward(forwards[Number(btn.dataset.stop)].id);
+        });
+      });
+    }
+
+    // ---------------------------------------------------------------------
+    // Kubernetes context injection
+    // ---------------------------------------------------------------------
+    async function kubeLogin(cluster) {
+      const hint = $("#hint");
+      try {
+        const res = await callSidecar(
+          "teleport/kubeLogin",
+          { connectionId, cluster },
+          100000
+        );
+        hint.hidden = false;
+        hint.textContent = t.kubeDone
+          .replace("{ctx}", res.context)
+          .replace("{path}", res.kubeconfig);
+      } catch (e) {
+        hint.hidden = false;
+        hint.textContent = `kube error: ${String((e && e.message) || e)}`;
+      }
+    }
+
+    // ---------------------------------------------------------------------
+    // Batch execution + liveness probe
+    // ---------------------------------------------------------------------
+    function updateBatchBar() {
+      const n = selectedHosts.size;
+      $("#batchBar").classList.toggle("open", n > 0);
+      $("#batchSelected").textContent = t.selected.replace("{n}", String(n));
+    }
+
+    let probeProgress = 0;
+    let retryProgress = 0;
+
+    /// Handle a streamed `batch/item` event (probe liveness or exec row).
+    function onBatchItem(params) {
+      if (!params) return;
+      if (params.kind === "probe" && params.batch_id === activeProbeId) {
+        // The events only drive the progress label; the authoritative
+        // online/slow result comes from the final probe response.
+        if (params.phase === 2) {
+          retryProgress++;
+          $("#btnProbe").textContent = `${t.confirming.replace("{n}", String(retryProgress))}`;
+        } else {
+          probeProgress++;
+          const nodeTotal = resources.filter((r) => r.kind === "node").length;
+          $("#btnProbe").textContent = `${t.probing} ${probeProgress}/${nodeTotal}`;
+        }
+        return;
+      }
+      if (params.kind === "exec" && params.batch_id === activeBatchId) {
+        batchRows.set(params.host, params);
+        if ($("#batchOverlay").classList.contains("open")) renderBatchRows();
+      }
+    }
+
+    async function runProbe() {
+      if (busy || batchRunning) return;
+      const btn = $("#btnProbe");
+      btn.disabled = true;
+      const probeId =
+        "p" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+      activeProbeId = probeId;
+      probeProgress = 0;
+      retryProgress = 0;
+      const nodeTotal = resources.filter((r) => r.kind === "node").length;
+      btn.textContent = `${t.probing} 0/${nodeTotal}`;
+      try {
+        // Two-phase probe (broad sweep + slow confirmation) can take several
+        // minutes over satellite links; allow up to ten minutes.
+        const res = await callSidecar(
+          "teleport/probe",
+          { connectionId, batchId: probeId },
+          600000
+        );
+        if (res && res.online && typeof res.online === "object") {
+          onlineMap = new Map(Object.entries(res.online));
+        }
+        if (res && res.slow && typeof res.slow === "object") {
+          slowHosts = new Map(Object.entries(res.slow));
+        } else {
+          slowHosts = new Map();
+        }
+        probed = true;
+        // Selected nodes that turned out offline can no longer be targets.
+        [...selectedHosts].forEach((h) => {
+          if (onlineMap.get(h) === false) selectedHosts.delete(h);
+        });
+        renderResources();
+        updateBatchBar();
+      } catch (e) {
+        const hint = $("#hint");
+        hint.hidden = false;
+        hint.textContent = `probe error: ${String((e && e.message) || e)}`;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = t.probe;
+        activeProbeId = null;
+      }
+    }
+
+    function setBatchRunning(v) {
+      batchRunning = v;
+      $("#batchRunBtn").disabled = v;
+    }
+
+    async function runBatch() {
+      if (batchRunning) return;
+      const command = $("#batchCommand").value.trim();
+      if (!command) {
+        $("#batchCommand").focus();
+        return;
+      }
+      const hosts = [...selectedHosts];
+      if (!hosts.length) return;
+      const concurrency = Math.min(
+        50,
+        Math.max(1, parseInt($("#batchConcurrency").value, 10) || 10)
+      );
+      const timeoutSecs = Math.min(
+        600,
+        Math.max(1, parseInt($("#batchTimeout").value, 10) || 60)
+      );
+      const batchId =
+        "c" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+      activeBatchId = batchId;
+      batchRows = new Map();
+      batchExpanded = new Set();
+      hosts.forEach((h) =>
+        batchRows.set(h, {
+          host: h,
+          status: "pending",
+          duration_ms: null,
+          stdout: "",
+          stderr: "",
+        })
+      );
+
+      openBatchOverlay(command);
+      renderBatchRows();
+      setBatchRunning(true);
+      let summary = null;
+      try {
+        summary = await callSidecar(
+          "teleport/batchExec",
+          { connectionId, hosts, command, concurrency, timeoutSecs, batchId },
+          Math.max(180000, timeoutSecs * 1000 + 90000)
+        );
+      } catch (e) {
+        batchRows.forEach((r) => {
+          if (r.status === "pending") {
+            r.status = "error";
+            r.stderr = String((e && e.message) || e);
+          }
+        });
+      }
+      if (summary && Array.isArray(summary.results)) {
+        batchRows = new Map(summary.results.map((r) => [r.host, r]));
+      }
+      renderBatchRows();
+      updateBatchSummary(summary);
+      setBatchRunning(false);
+    }
+
+    let lastBatchCommand = "";
+    let lastBatchSummary = null;
+
+    function openBatchOverlay(command) {
+      lastBatchCommand = command;
+      lastBatchSummary = null;
+      $("#batchOverlay").classList.add("open");
+      $("#batchOverlayTitle").textContent = `${t.batch} › ${command}`;
+      $("#batchSummary").textContent = "";
+      // Start on the table view; report view stays hidden until requested.
+      $("#batchResultBody").hidden = false;
+      $("#batchReportView").hidden = true;
+      $("#batchReportBtn").textContent = t.report;
+    }
+
+    function renderBatchRows() {
+      const body = $("#batchResultBody");
+      const hosts = [...batchRows.keys()];
+      const statusLabel = {
+        pending: t.sPending,
+        ok: t.sOk,
+        fail: t.sFail,
+        timeout: t.sTimeout,
+        error: t.sError,
+      };
+      const rowsHtml = hosts
+        .map((h, i) => {
+          const r = batchRows.get(h);
+          const expanded = batchExpanded.has(h);
+          const dur = r.duration_ms != null ? `${r.duration_ms}ms` : "—";
+          const hasOut = !!(r.stdout || r.stderr);
+          const outRow =
+            expanded && hasOut
+              ? `<tr><td colspan="3" class="bout-cell">
+                  ${r.stdout ? `<pre class="bout" data-bout-out="${i}"></pre>` : ""}
+                  ${r.stderr ? `<pre class="bout err" data-bout-err="${i}"></pre>` : ""}
+                </td></tr>`
+              : "";
+          return `<tr class="row-main" data-row-idx="${i}">
+            <td class="bhost" data-row-host="${i}"></td>
+            <td><span class="bstatus ${r.status}">${statusLabel[r.status] || r.status}</span></td>
+            <td class="bdur">${dur}</td>
+          </tr>${outRow}`;
+        })
+        .join("");
+      body.innerHTML = `<table class="bresult-table">
+        <thead><tr><th>${t.bColHost}</th><th>${t.bColStatus}</th><th>${t.bColDuration}</th></tr></thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>`;
+
+      // All host/output text goes through textContent — no HTML injection.
+      body.querySelectorAll("[data-row-host]").forEach((el) => {
+        el.textContent = hosts[Number(el.dataset.rowHost)];
+      });
+      body.querySelectorAll("[data-bout-out]").forEach((el) => {
+        el.textContent = batchRows.get(hosts[Number(el.dataset.boutOut)]).stdout;
+      });
+      body.querySelectorAll("[data-bout-err]").forEach((el) => {
+        el.textContent = batchRows.get(hosts[Number(el.dataset.boutErr)]).stderr;
+      });
+      body.querySelectorAll("tr.row-main").forEach((tr) => {
+        tr.addEventListener("click", () => {
+          const h = hosts[Number(tr.dataset.rowIdx)];
+          const r = batchRows.get(h);
+          if (!(r.stdout || r.stderr)) return;
+          if (batchExpanded.has(h)) batchExpanded.delete(h);
+          else batchExpanded.add(h);
+          renderBatchRows();
+        });
+      });
+    }
+
+    function updateBatchSummary(summary) {
+      lastBatchSummary = summary;
+      if (!summary) return;
+      $("#batchSummary").textContent =
+        t.bDone
+          .replace("{ok}", summary.ok)
+          .replace("{total}", summary.total)
+          .replace("{fail}", summary.failed) +
+        ` · ${summary.duration_ms}ms`;
+    }
+
+    // -----------------------------------------------------------------------
+    // Consolidated per-node report (one text block, printable / copyable)
+    // -----------------------------------------------------------------------
+    function buildBatchReport() {
+      const hosts = [...batchRows.keys()].sort();
+      const rows = hosts.map((h) => batchRows.get(h));
+
+      // Duration statistics over finished nodes.
+      const durs = rows
+        .map((r) => (typeof r.duration_ms === "number" ? r.duration_ms : null))
+        .filter((d) => d !== null);
+      const sum = durs.reduce((a, b) => a + b, 0);
+      const avg = durs.length ? Math.round(sum / durs.length) : 0;
+      const min = durs.length ? Math.min(...durs) : 0;
+      const max = durs.length ? Math.max(...durs) : 0;
+      const totalMs = lastBatchSummary && typeof lastBatchSummary.duration_ms === "number"
+        ? lastBatchSummary.duration_ms
+        : sum;
+
+      const okCount = rows.filter((r) => r.status === "ok").length;
+      const failCount = rows.length - okCount;
+
+      const now = new Date();
+      const pad = (n) => String(n).padStart(2, "0");
+      const timeStr =
+        `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ` +
+        `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+
+      const statusTag = {
+        ok: "OK",
+        fail: "FAIL",
+        timeout: "TIMEOUT",
+        error: "ERROR",
+        pending: "PENDING",
+      };
+
+      const lines = [];
+      lines.push(`===== ${t.rptTitle} =====`);
+      lines.push(`${t.rptCmd}: ${lastBatchCommand}`);
+      lines.push(`${t.rptTime}: ${timeStr}`);
+      lines.push(
+        t.rptStat
+          .replace("{total}", rows.length)
+          .replace("{ok}", okCount)
+          .replace("{fail}", failCount)
+      );
+      lines.push(
+        t.rptDur
+          .replace("{totalMs}", totalMs)
+          .replace("{avgMs}", avg)
+          .replace("{minMs}", min)
+          .replace("{maxMs}", max)
+      );
+      lines.push("");
+      lines.push(`----- ${t.rptDetail} (${rows.length}) -----`);
+
+      rows.forEach((r, i) => {
+        const tag = statusTag[r.status] || r.status.toUpperCase();
+        const dur = typeof r.duration_ms === "number" ? `${r.duration_ms}ms` : "-";
+        lines.push(`[${tag}] ${r.host}  (${dur})`);
+        const stdout = (r.stdout || "").replace(/\s+$/, "");
+        const stderr = (r.stderr || "").replace(/\s+$/, "");
+        if (stdout) {
+          lines.push("  stdout:");
+          stdout.split("\n").forEach((l) => lines.push("    " + l));
+        }
+        if (stderr) {
+          lines.push("  stderr:");
+          stderr.split("\n").forEach((l) => lines.push("    " + l));
+        }
+        if (!stdout && !stderr) lines.push("  " + t.rptNoOutput);
+        if (i < rows.length - 1) lines.push("");
+      });
+
+      return lines.join("\n");
+    }
+
+    /// Toggle between the table view and the full per-node report view.
+    function toggleBatchReport() {
+      const view = $("#batchReportView");
+      const table = $("#batchResultBody");
+      const btn = $("#batchReportBtn");
+      if (view.hidden) {
+        $("#batchReportPre").textContent = buildBatchReport();
+        view.hidden = false;
+        table.hidden = true;
+        btn.textContent = t.backToTable;
+      } else {
+        view.hidden = true;
+        table.hidden = false;
+        btn.textContent = t.report;
+      }
+    }
+
+    /// Copy the full report to the clipboard via the host bridge.
+    function copyBatchReport() {
+      try {
+        window.dbxPlugin.copy(buildBatchReport());
+      } catch (e) {}
+    }
+
+    $("#batchReportBtn").addEventListener("click", toggleBatchReport);
+    $("#batchCopyReportBtn").addEventListener("click", copyBatchReport);
+    $("#termClose").addEventListener("click", closeTerminalOverlay);
+
+    // Reconnect controls.
+    $("#reconnectBtn").addEventListener("click", () => {
+      reconnectAttempts = 0;
+      reconnectSsh();
+    });
+    $("#autoReconnect").addEventListener("change", (e) => {
+      autoReconnectOn = e.target.checked;
+      // Enabling it while already disconnected starts the loop immediately.
+      if (autoReconnectOn && termDone && termNodeName && !reconnectTimer) {
+        scheduleReconnect(2000, 1);
+      }
+      if (!autoReconnectOn) clearTimeout(reconnectTimer);
+    });
+
+    // Snippet bar collapse + custom snippet add flow.
+    $("#snippetToggle").addEventListener("click", () => {
+      $("#snippetBar").classList.toggle("collapsed");
+    });
+    $("#snippetAddBtn").addEventListener("click", () => {
+      const row = $("#snippetAddRow");
+      row.hidden = !row.hidden;
+      if (!row.hidden) {
+        $("#snippetAddInput").value = "";
+        $("#snippetAddInput").focus();
+      }
+    });
+    const confirmAddSnippet = () => {
+      const input = $("#snippetAddInput");
+      const v = input.value;
+      if (v && !BUILTIN_SNIPPETS.includes(v) && !customSnippets.includes(v)) {
+        customSnippets.push(v);
+        persistCustomSnippets();
+        renderSnippets();
+      }
+      input.value = "";
+      $("#snippetAddRow").hidden = true;
+    };
+    $("#snippetAddConfirm").addEventListener("click", confirmAddSnippet);
+    $("#snippetAddInput").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") confirmAddSnippet();
+    });
+
+    $("#batchToggleForm").addEventListener("click", () => {
+      $("#batchForm").classList.toggle("open");
+    });
+    $("#batchClearBtn").addEventListener("click", () => {
+      selectedHosts.clear();
+      renderResources();
+      updateBatchBar();
+    });
+    $("#batchRunBtn").addEventListener("click", runBatch);
+    $("#batchOverlayClose").addEventListener("click", () => {
+      // Keep the overlay while a batch is in flight so rows keep streaming in.
+      if (batchRunning) return;
+      $("#batchOverlay").classList.remove("open");
+      activeBatchId = null;
+    });
+    $("#btnProbe").addEventListener("click", runProbe);
+
+    $("#fwdCreateBtn").addEventListener("click", createForward);
+    $("#forwardOverlayClose").addEventListener("click", () => {
+      if (fwdBusy) return;
+      $("#forwardOverlay").classList.remove("open");
+    });
+    // Enter anywhere in the create form submits it.
+    ["fwdNode", "fwdLocalPort", "fwdTargetHost", "fwdTargetPort"].forEach((id) => {
+      $("#" + id).addEventListener("keydown", (e) => {
+        if (e.key === "Enter") createForward();
+      });
+    });
+
+    $("#btnLogout").addEventListener("click", async () => {
+      $("#btnLogout").disabled = true;
+      try {
+        await callSidecar("connection/disconnect", { connectionId }, 15000);
+      } finally {
+        await refresh();
+        $("#btnLogout").disabled = false;
+      }
+    });
+
+    $("#filters").addEventListener("click", (e) => {
+      const btn = e.target.closest("button[data-filter]");
+      if (!btn) return;
+      filter = btn.dataset.filter;
+      document.querySelectorAll("#filters button").forEach((b) => b.classList.toggle("active", b === btn));
+      renderResources();
+    });
+
+    $("#searchInput").addEventListener("input", (e) => {
+      search = e.target.value;
+      renderResources();
+    });
+
+    window.dbxPlugin.ready.then((ctx) => {
+      try {
+        // 保险：无论之前处于何种状态，加载时强制关闭终端覆盖层
+        $("#termOverlay").classList.remove("open");
+        const locale = (window.dbxPlugin.locale || "zh-CN").toLowerCase();
+        t = I18N[locale] || I18N["zh-cn"];
+        connectionId = (ctx && ctx.connectionId) || window.dbxPlugin.context?.connectionId || null;
+        applyI18n();
+
+        // Streamed batch items: liveness probes and per-node exec results.
+        window.dbxPlugin.onEvent((ev) => {
+          if (ev && ev.method === "batch/item") onBatchItem(ev.params || {});
+          if (ev && ev.method === "forward/state") {
+            // A tunnel dropped or was stopped; update the table.
+            refreshForwards();
+          }
+        });
+
+        // Route binary terminal output frames to the active (or pending) session.
+        // DBX delivers plugin binary output on the "binary" message, which the
+        // bridge exposes as onBinary with data already as a Uint8Array (NOT via
+        // onEvent / decodeBase64 — those only carry JSON events).
+        window.dbxPlugin.onBinary((ev) => {
+          if (ev && isTerminalChannel(ev.channel)) {
+            const sid = ev.channel.slice("ssh/terminal/out/".length);
+            const bytes = ev.data instanceof Uint8Array ? ev.data : (ev.data ? new Uint8Array(ev.data) : null);
+            if (!bytes || bytes.length < 9) return;
+            const stream = bytes[0];
+            let seq;
+            try {
+              seq = Number(new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getBigUint64(1, false));
+            } catch (e) { return; }
+            onTerminalFrame(sid, stream, seq, bytes.slice(9));
+          }
+        });
+
+        refresh();
+      } catch (e) {
+        const hint = $("#hint");
+        hint.hidden = false;
+        hint.textContent = `init error: ${String((e && e.message) || e)}`;
+      }
+    });
+  </script>
+</body>
+</html>

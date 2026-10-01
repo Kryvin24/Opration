@@ -1,0 +1,11 @@
+# DBX Plugin packaging config for io.zdiai.teleport
+# Private distribution — Windows 10 x64 only (packager builds the current host target).
+schema_version = 1
+
+[backend]
+language = "rust"
+directory = "backend"
+binary = "dbx-teleport-sidecar"
+
+[package]
+include = ["assets", "ui"]

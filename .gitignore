@@ -1,0 +1,24 @@
+# Rust (any target dir, including vendored deps)
+target/
+
+# Portable toolchains (MinGit etc.)
+tools/mingit/
+
+# Temp/scratch
+tools/_*.js
+*.tar.gz
+
+# DBX plugin build output
+dist/
+
+# Node / pnpm (future UI build)
+node_modules/
+ui/dist/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+.DS_Store
