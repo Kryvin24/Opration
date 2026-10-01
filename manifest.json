@@ -3,7 +3,7 @@
   "manifest_version": 1,
   "id": "io.zdiai.teleport",
   "name": "Teleport",
-  "version": "0.1.24",
+  "version": "0.1.25",
   "publisher": "zdiai",
   "description": "Browse Teleport nodes and open SSH terminals for your cluster at teleport.zdiai.com.",
   "icon": "assets/plugin.svg",
