@@ -143,6 +143,12 @@ impl ForwardManager {
                     Ok(g) => g,
                     Err(_) => break,
                 };
+                if child_g.is_none() {
+                    // stop() reaped the child and removed the entry already —
+                    // without this break the monitor spins at 300ms forever,
+                    // leaking one thread per stopped forward.
+                    break;
+                }
                 match child_g.as_mut().and_then(|c| c.try_wait().ok()) {
                     Some(Some(status)) => {
                         *child_g = None;

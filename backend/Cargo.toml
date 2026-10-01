@@ -1,6 +1,6 @@
 [package]
 name = "dbx-teleport-sidecar"
-version = "0.1.26"
+version = "0.1.27"
 edition = "2021"
 description = "Native sidecar for the DBX Teleport plugin — drives tsh login and SSH terminal sessions."
 license = "Apache-2.0"

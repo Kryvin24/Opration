@@ -17,7 +17,7 @@
 use std::io::{Read, Write};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use dbx_plugin_sdk::{
     host_client, trace, PluginError, UserInputAnswer, UserInputPrompt,
@@ -129,7 +129,20 @@ pub fn run_login(p: &LoginParams) -> Result<(), String> {
     // Sliding window kept for error reporting (never cleared).
     let mut recent = String::new();
 
+    // Overall deadline: if tsh wedges on an unrecognized prompt (no output,
+    // no exit), the prompt-matching loop below would spin forever — the host
+    // RPC would time out but this thread and the tsh child would leak. Kill
+    // it after 150s regardless.
+    let deadline = Instant::now() + Duration::from_secs(150);
+
     let exit_status = loop {
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            return Err(format!(
+                "tsh login timed out after 150s. Last tsh output: {}",
+                sanitize(&recent, 400)
+            ));
+        }
         match rx.recv_timeout(Duration::from_millis(150)) {
             Ok(Some(bytes)) => {
                 let chunk = String::from_utf8_lossy(&bytes).to_string();
