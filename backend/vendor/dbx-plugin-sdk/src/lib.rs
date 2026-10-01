@@ -10,7 +10,7 @@ use serde_json::Value;
 
 pub const PROTOCOL_VERSION: u32 = 1;
 
-/// Append a diagnostic line to `%TEMP%\dbx-teleport-sidecar.log` (best effort).
+/// Append a diagnostic line to the system temp dir (`dbx-teleport-sidecar.log`, best effort).
 /// Local debugging aid added to this vendored copy of the SDK.
 ///
 /// Every line passes through [`redact`] so secrets can never reach the log:
@@ -19,10 +19,7 @@ pub const PROTOCOL_VERSION: u32 = 1;
 /// [`trace_verbose`] instead, which only writes when `DBX_TELEPORT_DEBUG=1`.
 pub fn trace(message: &str) {
     use std::io::Write;
-    let Some(dir) = std::env::var_os("TEMP").or_else(|| std::env::var_os("TMP")) else {
-        return;
-    };
-    let path = std::path::Path::new(&dir).join("dbx-teleport-sidecar.log");
+    let path = std::env::temp_dir().join("dbx-teleport-sidecar.log");
     rotate_if_needed(&path);
     let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(path) else {
         return;

@@ -43,10 +43,8 @@ fn run_tsh(tsh: &str, args: &[&str], timeout_secs: u64) -> String {
 
 /// Read the last `max_bytes` of the sidecar log, if present.
 fn log_tail(max_bytes: usize) -> String {
-    let Some(dir) = std::env::var_os("TEMP").or_else(|| std::env::var_os("TMP")) else {
-        return String::from("(no TEMP dir)");
-    };
-    let path = std::path::Path::new(&dir).join("dbx-teleport-sidecar.log");
+    let dir = std::env::temp_dir();
+    let path = dir.join("dbx-teleport-sidecar.log");
     let Ok(mut f) = std::fs::File::open(&path) else {
         return String::from("(no sidecar log found)");
     };
@@ -81,10 +79,7 @@ pub fn run(tsh: &str, conn_id: &str, plugin_version: &str) -> Result<Value, Stri
     doc.push_str("\n===== sidecar log (tail) =====\n");
     doc.push_str(&log_tail(64 * 1024));
 
-    let dir = std::env::var_os("TEMP")
-        .or_else(|| std::env::var_os("TMP"))
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| std::path::PathBuf::from("."));
+    let dir = std::env::temp_dir();
     let path = dir.join(format!("dbx-teleport-diag-{ts}.txt"));
     std::fs::write(&path, doc).map_err(|e| format!("failed to write diag file: {e}"))?;
 

@@ -2,7 +2,7 @@
 // Built on the vendored dbx-plugin-sdk (upstream, with built-in HostClient).
 //
 // Phase 1–2:
-//   · connection/test          — locate tsh.exe and report its version
+//   · connection/test          — locate tsh and report its version
 //   · connection/connect       — `tsh login` in ConPTY; password from the form,
 //                                OTP collected fresh via host/requestUserInput
 //   · connection/disconnect    — `tsh logout`
@@ -579,7 +579,7 @@ impl TeleportPlugin {
             .unwrap_or("");
         let tsh = conn_setting(conn_id)
             .map(|s| s.tsh)
-            .unwrap_or_else(|| "tsh.exe".to_string());
+            .unwrap_or_else(|| tsh_bin(&None));
         diag::run(&tsh, conn_id, env!("CARGO_PKG_VERSION"))
             .map_err(|e| PluginError::new(-32000, e))
     }
@@ -624,13 +624,23 @@ impl TeleportPlugin {
         if !ok {
             return Err(PluginError::new(-32000, stderr.trim().to_string()));
         }
-        // tsh writes the current-context entry into %USERPROFILE%\.kube\config.
+        // tsh writes the current-context entry into ~/.kube/config.
+        let kubeconfig = std::env::var_os("USERPROFILE")
+            .or_else(|| std::env::var_os("HOME"))
+            .map(|h| {
+                std::path::Path::new(&h)
+                    .join(".kube")
+                    .join("config")
+                    .to_string_lossy()
+                    .to_string()
+            })
+            .unwrap_or_else(|| "~/.kube/config".to_string());
         Ok(json!({
             "ok": true,
             "cluster": cluster,
             "context": cluster,
             "output": format!("{stdout}{stderr}").trim().to_string(),
-            "kubeconfig": "%USERPROFILE%\\.kube\\config",
+            "kubeconfig": kubeconfig,
         }))
     }
 
