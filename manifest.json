@@ -3,13 +3,16 @@
   "manifest_version": 1,
   "id": "io.zdiai.teleport",
   "name": "Teleport",
-  "version": "0.1.21",
+  "version": "0.1.22",
   "publisher": "zdiai",
   "description": "Browse Teleport nodes and open SSH terminals for your cluster at teleport.zdiai.com.",
   "icon": "assets/plugin.svg",
   "source": "",
   "homepage": "https://teleport.zdiai.com/",
-  "engines": { "dbx": ">=0.6.28", "host_api": "1" },
+  "engines": {
+    "dbx": ">=0.6.28",
+    "host_api": "1"
+  },
   "permissions": [
     "host.workbench",
     "host.events",
@@ -17,7 +20,10 @@
     "host.network:https://teleport.zdiai.com:443"
   ],
   "entrypoints": {
-    "ui": { "root": "ui", "entry": "ui/index.html" },
+    "ui": {
+      "root": "ui",
+      "entry": "ui/index.html"
+    },
     "backend": {
       "executable": "bin/dbx-teleport-sidecar",
       "transport": "stdio-framed"
@@ -32,11 +38,44 @@
       "database_type": "teleport-cluster",
       "description": "Connect to your Teleport proxy at teleport.zdiai.com and browse clusters, SSH nodes, apps, and Kubernetes.",
       "fields": [
-        { "key": "display_name", "label": "Name", "type": "text", "binding": "name", "required": true, "default": "teleport.zdiai.com" },
-        { "key": "proxy", "label": "Proxy host", "type": "text", "binding": "host", "required": true, "default": "teleport.zdiai.com" },
-        { "key": "port", "label": "Proxy port", "type": "number", "binding": "port", "default": 443 },
-        { "key": "user", "label": "Teleport user", "type": "text", "binding": "username", "required": true, "placeholder": "xiangkai" },
-        { "key": "password", "label": "Password", "type": "password", "binding": "password", "required": true },
+        {
+          "key": "display_name",
+          "label": "Name",
+          "type": "text",
+          "binding": "name",
+          "required": true,
+          "default": "teleport.zdiai.com"
+        },
+        {
+          "key": "proxy",
+          "label": "Proxy host",
+          "type": "text",
+          "binding": "host",
+          "required": true,
+          "default": "teleport.zdiai.com"
+        },
+        {
+          "key": "port",
+          "label": "Proxy port",
+          "type": "number",
+          "binding": "port",
+          "default": 443
+        },
+        {
+          "key": "user",
+          "label": "Teleport user",
+          "type": "text",
+          "binding": "username",
+          "required": true,
+          "placeholder": "xiangkai"
+        },
+        {
+          "key": "password",
+          "label": "Password",
+          "type": "password",
+          "binding": "password",
+          "required": true
+        },
         {
           "key": "auth_connector",
           "label": "Auth connector",
@@ -44,9 +83,18 @@
           "binding": "config",
           "default": "local",
           "options": [
-            { "label": "Local (username + password)", "value": "local" },
-            { "label": "OIDC / SSO", "value": "oidc" },
-            { "label": "SAML", "value": "saml" }
+            {
+              "label": "Local (username + password)",
+              "value": "local"
+            },
+            {
+              "label": "OIDC / SSO",
+              "value": "oidc"
+            },
+            {
+              "label": "SAML",
+              "value": "saml"
+            }
           ]
         },
         {
@@ -56,21 +104,77 @@
           "binding": "config",
           "default": "otp",
           "options": [
-            { "label": "Authenticator App (TOTP)", "value": "otp" },
-            { "label": "WebAuthn", "value": "webauthn" }
+            {
+              "label": "Authenticator App (TOTP)",
+              "value": "otp"
+            },
+            {
+              "label": "WebAuthn",
+              "value": "webauthn"
+            }
           ]
         },
-        { "key": "cluster", "label": "Cluster name", "type": "text", "binding": "config", "description": "Leave empty to use the root cluster." },
-        { "key": "ssh_login", "label": "SSH login user", "type": "text", "binding": "config", "default": "root", "description": "Remote OS login for SSH sessions. Must be one of the Logins granted to your Teleport user." },
-        { "key": "tsh_path", "label": "tsh binary path", "type": "text", "binding": "config", "placeholder": "auto-detect from PATH" },
-        { "key": "kube_context_prefix", "label": "Kube context prefix", "type": "text", "binding": "config", "default": "tp-" }
+        {
+          "key": "cluster",
+          "label": "Cluster name",
+          "type": "text",
+          "binding": "config",
+          "description": "Leave empty to use the root cluster."
+        },
+        {
+          "key": "ssh_login",
+          "label": "SSH login user",
+          "type": "text",
+          "binding": "config",
+          "default": "root",
+          "description": "Remote OS login for SSH sessions. Must be one of the Logins granted to your Teleport user."
+        },
+        {
+          "key": "tsh_path",
+          "label": "tsh binary path",
+          "type": "text",
+          "binding": "config",
+          "placeholder": "auto-detect from PATH"
+        },
+        {
+          "key": "kube_context_prefix",
+          "label": "Kube context prefix",
+          "type": "text",
+          "binding": "config",
+          "default": "tp-"
+        }
       ],
       "workbench": "io.zdiai.teleport.main",
-      "capabilities": ["test", "connect", "disconnect"],
+      "capabilities": [
+        "test",
+        "connect",
+        "disconnect"
+      ],
       "actions": [
-        { "id": "login", "label": "tsh login", "variant": "default", "when": "always", "requires_valid_form": true, "timeout_ms": 120000 },
-        { "id": "logout", "label": "tsh logout", "variant": "outline", "when": "always", "close_on_success": true, "timeout_ms": 30000 },
-        { "id": "refresh", "label": "Refresh metadata", "variant": "outline", "when": "edit", "requires_valid_form": true, "timeout_ms": 30000 }
+        {
+          "id": "login",
+          "label": "tsh login",
+          "variant": "default",
+          "when": "always",
+          "requires_valid_form": true,
+          "timeout_ms": 120000
+        },
+        {
+          "id": "logout",
+          "label": "tsh logout",
+          "variant": "outline",
+          "when": "always",
+          "close_on_success": true,
+          "timeout_ms": 30000
+        },
+        {
+          "id": "refresh",
+          "label": "Refresh metadata",
+          "variant": "outline",
+          "when": "edit",
+          "requires_valid_form": true,
+          "timeout_ms": 30000
+        }
       ]
     },
     {
@@ -95,21 +199,47 @@
           "label": "Teleport 集群",
           "description": "连接 teleport.zdiai.com 上的 Teleport 代理。",
           "fields": {
-            "display_name": { "label": "名称" },
-            "proxy": { "label": "代理地址" },
-            "port": { "label": "代理端口" },
-            "user": { "label": "Teleport 用户名" },
-            "password": { "label": "密码" },
-            "auth_connector": { "label": "认证连接器" },
-            "mfa_type": { "label": "多因素类型" },
-            "cluster": { "label": "集群名称" },
-            "ssh_login": { "label": "SSH 登录用户" },
-            "tsh_path": { "label": "tsh 路径" },
-            "kube_context_prefix": { "label": "Kube 上下文前缀" }
+            "display_name": {
+              "label": "名称"
+            },
+            "proxy": {
+              "label": "代理地址"
+            },
+            "port": {
+              "label": "代理端口"
+            },
+            "user": {
+              "label": "Teleport 用户名"
+            },
+            "password": {
+              "label": "密码"
+            },
+            "auth_connector": {
+              "label": "认证连接器"
+            },
+            "mfa_type": {
+              "label": "多因素类型"
+            },
+            "cluster": {
+              "label": "集群名称"
+            },
+            "ssh_login": {
+              "label": "SSH 登录用户"
+            },
+            "tsh_path": {
+              "label": "tsh 路径"
+            },
+            "kube_context_prefix": {
+              "label": "Kube 上下文前缀"
+            }
           }
         },
-        "io.zdiai.teleport.main": { "label": "Teleport" },
-        "io.zdiai.teleport.ssh": { "label": "打开 SSH 终端" }
+        "io.zdiai.teleport.main": {
+          "label": "Teleport"
+        },
+        "io.zdiai.teleport.ssh": {
+          "label": "打开 SSH 终端"
+        }
       }
     }
   }

@@ -337,6 +337,19 @@
     .fwd-table .mono { font-family: ui-monospace, Consolas, monospace; }
     .fwd-table button { padding: 3px 10px; font-size: 11.5px; margin-right: 6px; }
     .fwd-state { display: inline-block; padding: 1px 9px; border-radius: 999px; font-size: 11px; font-weight: 600; color: var(--brand); border: 1px solid var(--border); }
+
+    /* Transfer overlay extras */
+    .xfer-tabs { display: flex; gap: 4px; margin-left: 14px; }
+    .xfer-tabs button {
+      padding: 3px 12px; font-size: 12px; border-radius: 7px;
+      border: 1px solid var(--border); background: var(--bg); color: var(--muted);
+    }
+    .xfer-tabs button.active { color: #fff; background: var(--brand); border-color: var(--brand); }
+    .xfer-check { display: flex; align-items: center; height: 32px; }
+    .xfer-check input { accent-color: var(--brand); width: 16px; height: 16px; }
+    .xfer-pushall { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+    .xfer-pushall input { accent-color: var(--brand); }
+    #xferUpBody .xfer-fail { color: var(--danger); font-size: 11.5px; }
   </style>
   <link rel="stylesheet" href="vendor/xterm.css" />
 </head>
@@ -454,6 +467,70 @@
   </div>
   <datalist id="fwdNodeList"></datalist>
 
+  <div class="batch-overlay" id="transferOverlay">
+    <div class="batch-overlay-bar">
+      <span class="title" data-i18n="transferTitle">文件传输</span>
+      <div class="xfer-tabs">
+        <button id="xferTabUp" type="button" data-i18n="xferUp">上传到节点</button>
+        <button id="xferTabDown" type="button" data-i18n="xferDown">从节点下载</button>
+      </div>
+      <span class="spacer"></span>
+      <button id="transferOverlayClose" type="button">✕</button>
+    </div>
+
+    <!-- Upload pane -->
+    <div class="fwd-body" id="xferPaneUp">
+      <div class="fwd-create">
+        <h3 data-i18n="xferUpTitle">上传文件 / 目录</h3>
+        <div class="fwd-grid" style="grid-template-columns:1.3fr 1fr 0.7fr;">
+          <label><span data-i18n="xferLocal">本地路径（可在资源管理器 Shift+右键“复制为路径”）</span>
+            <input id="xferUpLocal" spellcheck="false" placeholder='C:\Users\zdiai\Desktop\script.sh' />
+          </label>
+          <label><span data-i18n="xferRemote">目标目录（节点上）</span>
+            <input id="xferUpRemote" spellcheck="false" value="/root" />
+          </label>
+          <label><span data-i18n="xferRecursive">目录</span>
+            <span class="xfer-check"><input id="xferUpRecursive" type="checkbox" /></span>
+          </label>
+        </div>
+        <div class="fwd-actions">
+          <button id="xferUpBtn" class="primary" type="button" data-i18n="xferStartUp">开始上传</button>
+          <label class="xfer-pushall"><input id="xferUpAll" type="checkbox" /> <span id="xferUpAllLabel"></span></label>
+          <span class="fwd-msg" id="xferUpMsg"></span>
+        </div>
+      </div>
+      <table class="fwd-table">
+        <thead><tr><th data-i18n="fwdTNode">节点</th><th data-i18n="fwdTState">状态</th><th data-i18n="fwdTMap">耗时</th><th> </th></tr></thead>
+        <tbody id="xferUpBody"></tbody>
+      </table>
+    </div>
+
+    <!-- Download pane -->
+    <div class="fwd-body" id="xferPaneDown" hidden>
+      <div class="fwd-create">
+        <h3 data-i18n="xferDownTitle">下载文件 / 目录</h3>
+        <div class="fwd-grid" style="grid-template-columns:1.2fr 1.2fr 1.2fr 0.7fr;">
+          <label><span data-i18n="fwdNode">节点</span>
+            <input id="xferDownNode" list="fwdNodeList" autocomplete="off" spellcheck="false" />
+          </label>
+          <label><span data-i18n="xferDownRemote">远端路径（节点上）</span>
+            <input id="xferDownRemote" spellcheck="false" placeholder="/var/log/syslog" />
+          </label>
+          <label><span data-i18n="xferDownLocal">保存到本地</span>
+            <input id="xferDownLocal" spellcheck="false" placeholder='C:\Users\zdiai\Downloads\' />
+          </label>
+          <label><span data-i18n="xferRecursive">目录</span>
+            <span class="xfer-check"><input id="xferDownRecursive" type="checkbox" /></span>
+          </label>
+        </div>
+        <div class="fwd-actions">
+          <button id="xferDownBtn" class="primary" type="button" data-i18n="xferStartDown">开始下载</button>
+          <span class="fwd-msg" id="xferDownMsg"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="term-overlay" id="termOverlay">
     <div class="term-bar">
       <span class="term-title" id="termTitle">SSH</span>
@@ -518,7 +595,17 @@
         rptStat: "统计：共 {total} 台 · 成功 {ok} · 失败 {fail}",
         rptDur: "耗时：总 {totalMs}ms · 平均 {avgMs}ms · 最快 {minMs}ms · 最慢 {maxMs}ms",
         rptDetail: "节点明细",
-        rptNoOutput: "（无输出）"
+        rptNoOutput: "（无输出）",
+        transfer: "文件", transferTitle: "文件传输",
+        xferUp: "上传到节点", xferDown: "从节点下载",
+        xferUpTitle: "上传文件 / 目录", xferDownTitle: "下载文件 / 目录",
+        xferLocal: "本地路径", xferRemote: "目标目录（节点上）", xferRecursive: "目录",
+        xferStartUp: "开始上传", xferStartDown: "开始下载",
+        xferDownRemote: "远端路径（节点上）", xferDownLocal: "保存到本地",
+        xferPushAll: "同时推送到已勾选的 {n} 个节点",
+        xferRunning: "传输中", xferUpDone: "全部完成：成功 {ok}/{total}",
+        xferDownDone: "已下载到 {path}",
+        xferNodeSingle: "只传到当前节点"
       },
       en: {
         cluster: "Cluster", proxy: "Proxy", expiry: "Cert valid until",
@@ -559,7 +646,17 @@
         rptStat: "Stats: {total} total · {ok} ok · {fail} failed",
         rptDur: "Duration: total {totalMs}ms · avg {avgMs}ms · min {minMs}ms · max {maxMs}ms",
         rptDetail: "Per-node detail",
-        rptNoOutput: "(no output)"
+        rptNoOutput: "(no output)",
+        transfer: "Files", transferTitle: "File transfer",
+        xferUp: "Upload", xferDown: "Download",
+        xferUpTitle: "Upload file / directory", xferDownTitle: "Download file / directory",
+        xferLocal: "Local path", xferRemote: "Destination dir (on node)", xferRecursive: "Directory",
+        xferStartUp: "Start upload", xferStartDown: "Start download",
+        xferDownRemote: "Remote path (on node)", xferDownLocal: "Save locally to",
+        xferPushAll: "Also push to {n} selected nodes",
+        xferRunning: "transferring", xferUpDone: "All done: {ok}/{total} ok",
+        xferDownDone: "Downloaded to {path}",
+        xferNodeSingle: "Current node only"
       }
     };
 
@@ -645,6 +742,7 @@
       if (kind === "node") {
         return [
           { act: "ssh", label: t.ssh },
+          { act: "files", label: t.transfer },
           { act: "forward", label: t.forwardTitle },
         ];
       }
@@ -1318,6 +1416,10 @@
         openForwardOverlay(r.name);
         return;
       }
+      if (act === "files") {
+        openTransferOverlay(r.name);
+        return;
+      }
       if (act === "kube") {
         await kubeLogin(r.name);
         return;
@@ -1796,8 +1898,196 @@
       } catch (e) {}
     }
 
+    // -----------------------------------------------------------------------
+    // File transfer (upload / download via tsh scp)
+    // -----------------------------------------------------------------------
+    let xferContextNode = null;
+    const xferRows = new Map(); // node -> {status, duration_ms, stderr}
+    let xferBusy = false;
+
+    function openTransferOverlay(node) {
+      xferContextNode = node || null;
+      $("#xferDownNode").value = node || "";
+      $("#xferUpLocal").value = "";
+      $("#xferUpRemote").value = "/root";
+      $("#xferUpRecursive").checked = false;
+      $("#xferUpAll").checked = false;
+      $("#xferDownRemote").value = "";
+      $("#xferDownLocal").value = "";
+      $("#xferDownRecursive").checked = false;
+      $("#xferUpMsg").textContent = "";
+      $("#xferDownMsg").textContent = "";
+      xferRows.clear();
+      renderXferRows();
+      updatePushAllLabel();
+      switchXferTab("up");
+      $("#transferOverlay").classList.add("open");
+    }
+
+    function updatePushAllLabel() {
+      const n = selectedHosts.size;
+      $("#xferUpAllLabel").textContent =
+        n > 0 ? t.xferPushAll.replace("{n}", n) : t.xferNodeSingle;
+    }
+
+    function switchXferTab(mode) {
+      const up = mode === "up";
+      $("#xferTabUp").classList.toggle("active", up);
+      $("#xferTabDown").classList.toggle("active", !up);
+      $("#xferPaneUp").hidden = !up;
+      $("#xferPaneDown").hidden = up;
+    }
+
+    /// Explorer's "Copy as path" wraps the path in quotes; strip them.
+    function stripQuotes(p) {
+      let s = p.trim();
+      if (s.length >= 2 && s.startsWith('"') && s.endsWith('"')) {
+        s = s.slice(1, -1);
+      }
+      return s;
+    }
+
+    function onTransferItem(p) {
+      xferRows.set(p.node, {
+        status: p.status,
+        duration_ms: p.duration_ms,
+        stderr: p.stderr || "",
+      });
+      renderXferRows();
+    }
+
+    function renderXferRows() {
+      const body = $("#xferUpBody");
+      const hosts = [...xferRows.keys()];
+      const stateLabel = {
+        pending: t.sPending, ok: t.sOk, fail: t.sFail,
+        timeout: t.sTimeout, error: t.sFail,
+      };
+      body.innerHTML = hosts.map((h, i) => `
+        <tr>
+          <td class="mono" data-node="${i}"></td>
+          <td><span class="fwd-state" data-state="${i}"></span></td>
+          <td class="mono" data-dur="${i}"></td>
+          <td class="xfer-fail" data-err="${i}"></td>
+        </tr>`).join("");
+
+      body.querySelectorAll("[data-node]").forEach((el) => {
+        el.textContent = hosts[Number(el.dataset.node)];
+      });
+      body.querySelectorAll("[data-state]").forEach((el) => {
+        const r = xferRows.get(hosts[Number(el.dataset.state)]);
+        el.textContent = stateLabel[r.status] || r.status;
+        el.style.color =
+          r.status === "ok" ? "var(--brand)"
+          : r.status === "timeout" ? "#b9770e"
+          : r.status === "pending" ? "var(--muted)"
+          : "var(--danger)";
+      });
+      body.querySelectorAll("[data-dur]").forEach((el) => {
+        const r = xferRows.get(hosts[Number(el.dataset.dur)]);
+        el.textContent =
+          typeof r.duration_ms === "number" && r.status !== "pending"
+            ? r.duration_ms + "ms" : "";
+      });
+      body.querySelectorAll("[data-err]").forEach((el) => {
+        const r = xferRows.get(hosts[Number(el.dataset.err)]);
+        el.textContent = r.status === "ok" ? "" : (r.stderr || "");
+      });
+    }
+
+    async function startUpload() {
+      if (xferBusy) return;
+      const localPath = stripQuotes($("#xferUpLocal").value);
+      const remotePath = $("#xferUpRemote").value.trim();
+      const recursive = $("#xferUpRecursive").checked;
+      const pushAll = $("#xferUpAll").checked && selectedHosts.size > 0;
+      const nodes = pushAll
+        ? [...selectedHosts]
+        : (xferContextNode ? [xferContextNode] : []);
+
+      const msg = $("#xferUpMsg");
+      msg.classList.remove("ok");
+      if (!localPath) { msg.textContent = t.sError + ": local"; return; }
+      if (!remotePath) { msg.textContent = t.sError + ": remote"; return; }
+      if (!nodes.length) { msg.textContent = t.sError + ": node"; return; }
+
+      xferBusy = true;
+      $("#xferUpBtn").disabled = true;
+      xferRows.clear();
+      nodes.forEach((n) =>
+        xferRows.set(n, { status: "pending", duration_ms: null, stderr: "" }));
+      renderXferRows();
+      msg.textContent = "";
+
+      try {
+        const summary = await callSidecar(
+          "teleport/transferUpload",
+          {
+            connectionId, localPath, remotePath, nodes, recursive,
+            concurrency: 10, timeoutSecs: 300,
+          },
+          600000
+        );
+        // Final state comes from summary results (events may have already
+        // painted everything; this guarantees the last row is correct).
+        (summary.results || []).forEach((r) => onTransferItem(r));
+        msg.classList.add("ok");
+        msg.textContent = t.xferUpDone
+          .replace("{ok}", summary.ok)
+          .replace("{total}", summary.total);
+      } catch (e) {
+        msg.textContent = String((e && e.message) || e);
+      } finally {
+        xferBusy = false;
+        $("#xferUpBtn").disabled = false;
+      }
+    }
+
+    async function startDownload() {
+      if (xferBusy) return;
+      const node = $("#xferDownNode").value.trim();
+      const remotePath = $("#xferDownRemote").value.trim();
+      const localPath = stripQuotes($("#xferDownLocal").value);
+      const recursive = $("#xferDownRecursive").checked;
+      const msg = $("#xferDownMsg");
+      msg.classList.remove("ok");
+      if (!node || !remotePath || !localPath) {
+        msg.textContent = t.sError;
+        return;
+      }
+
+      xferBusy = true;
+      $("#xferDownBtn").disabled = true;
+      msg.textContent = t.xferRunning;
+      try {
+        await callSidecar(
+          "teleport/transferDownload",
+          { connectionId, node, remotePath, localPath, recursive, timeoutSecs: 300 },
+          600000
+        );
+        msg.classList.add("ok");
+        msg.textContent = t.xferDownDone.replace("{path}", localPath);
+      } catch (e) {
+        msg.textContent = String((e && e.message) || e);
+      } finally {
+        xferBusy = false;
+        $("#xferDownBtn").disabled = false;
+      }
+    }
+
     $("#batchReportBtn").addEventListener("click", toggleBatchReport);
     $("#batchCopyReportBtn").addEventListener("click", copyBatchReport);
+
+    // Transfer overlay.
+    $("#xferTabUp").addEventListener("click", () => switchXferTab("up"));
+    $("#xferTabDown").addEventListener("click", () => switchXferTab("down"));
+    $("#xferUpBtn").addEventListener("click", startUpload);
+    $("#xferDownBtn").addEventListener("click", startDownload);
+    $("#transferOverlayClose").addEventListener("click", () => {
+      if (xferBusy) return;
+      $("#transferOverlay").classList.remove("open");
+    });
+
     $("#termClose").addEventListener("click", closeTerminalOverlay);
 
     // Reconnect controls.
@@ -1909,6 +2199,9 @@
           if (ev && ev.method === "forward/state") {
             // A tunnel dropped or was stopped; update the table.
             refreshForwards();
+          }
+          if (ev && ev.method === "transfer/item") {
+            onTransferItem(ev.params || {});
           }
         });
 

@@ -14,6 +14,7 @@ mod forward;
 mod login;
 mod resources;
 mod ssh;
+mod transfer;
 
 use std::process::Command;
 use std::sync::Arc;
@@ -105,6 +106,10 @@ impl PluginHandler for TeleportPlugin {
             "teleport/forwardStop" => self.handle_forward_stop(&params),
             "teleport/forwardList" => Ok(self.handle_forward_list()),
             "teleport/kubeLogin" => self.handle_kube_login(&params),
+
+            // File transfer.
+            "teleport/transferUpload" => self.handle_transfer_upload(&params, emitter),
+            "teleport/transferDownload" => self.handle_transfer_download(&params),
 
             // Terminal lifecycle (fire-and-forget notifications from the UI).
             "ssh/terminal/resize" => {
@@ -557,6 +562,141 @@ impl TeleportPlugin {
             "output": format!("{stdout}{stderr}").trim().to_string(),
             "kubeconfig": "%USERPROFILE%\\.kube\\config",
         }))
+    }
+
+    /// Upload one local path to many nodes concurrently.
+    fn handle_transfer_upload(
+        &self,
+        params: &Value,
+        emitter: &PluginEmitter,
+    ) -> Result<Value, PluginError> {
+        let conn_id = params
+            .get("connectionId")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let setting = conn_setting(conn_id).ok_or_else(|| {
+            PluginError::new(-32000, "connection settings unavailable, please login first")
+        })?;
+        let local_path = params
+            .get("localPath")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| PluginError::new(-32602, "localPath is required"))?;
+        let remote_path = params
+            .get("remotePath")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| PluginError::new(-32602, "remotePath is required"))?;
+        let nodes: Vec<String> = params
+            .get("nodes")
+            .and_then(|v| v.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .filter(|s| !s.is_empty())
+                    .collect()
+            })
+            .unwrap_or_default();
+        if nodes.is_empty() {
+            return Err(PluginError::new(-32602, "nodes must contain at least one node"));
+        }
+        let recursive = params
+            .get("recursive")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let concurrency = params
+            .get("concurrency")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(10) as usize;
+        let timeout_secs = params
+            .get("timeoutSecs")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(300);
+
+        let transfer_id = format!(
+            "t{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or_default()
+        );
+
+        let opts = transfer::UploadOptions {
+            tsh: setting.tsh.clone(),
+            login: setting.ssh_login.clone(),
+            nodes,
+            local_path: local_path.to_string(),
+            remote_path: remote_path.to_string(),
+            recursive,
+            concurrency,
+            timeout_secs,
+            transfer_id,
+        };
+        Ok(transfer::upload(opts, emitter.clone()))
+    }
+
+    /// Download one remote path from a node to a local path.
+    fn handle_transfer_download(&self, params: &Value) -> Result<Value, PluginError> {
+        let conn_id = params
+            .get("connectionId")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let setting = conn_setting(conn_id).ok_or_else(|| {
+            PluginError::new(-32000, "connection settings unavailable, please login first")
+        })?;
+        let node = params
+            .get("node")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| PluginError::new(-32602, "node is required"))?;
+        let remote_path = params
+            .get("remotePath")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| PluginError::new(-32602, "remotePath is required"))?;
+        let local_path = params
+            .get("localPath")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| PluginError::new(-32602, "localPath is required"))?;
+        let recursive = params
+            .get("recursive")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let timeout_secs = params
+            .get("timeoutSecs")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(300);
+
+        let transfer_id = format!(
+            "t{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or_default()
+        );
+
+        let item = transfer::download(
+            &setting.tsh,
+            &setting.ssh_login,
+            node,
+            remote_path,
+            local_path,
+            recursive,
+            timeout_secs,
+            &transfer_id,
+        );
+        if item.get("status").and_then(|v| v.as_str()) == Some("ok") {
+            Ok(item)
+        } else {
+            let reason = item
+                .get("stderr")
+                .and_then(|v| v.as_str())
+                .unwrap_or("download failed");
+            Err(PluginError::new(-32000, reason.to_string()))
+        }
     }
 }
 
