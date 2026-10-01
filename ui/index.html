@@ -276,6 +276,45 @@
     .batch-overlay-bar .summary { font-size: 12px; color: var(--muted); }
     .batch-overlay-bar .spacer { flex: 1; }
     .batch-overlay-bar button { padding: 3px 10px; font-size: 13px; }
+    .insp-auto { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); }
+    .insp-chips { display: flex; gap: 8px; padding: 8px 14px; border-bottom: 1px solid var(--border); background: var(--surface); flex-wrap: wrap; }
+    .insp-chip { display: inline-flex; align-items: center; gap: 5px; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--border); font-size: 12px; color: var(--muted); }
+    .insp-chip b { font-weight: 650; }
+    .insp-dot { width: 8px; height: 8px; border-radius: 999px; display: inline-block; }
+    .insp-dot.ok { background: #1DC981; }
+    .insp-dot.warn { background: #EFAA17; }
+    .insp-dot.bad { background: #E8463A; }
+    .insp-dot.off { background: #9a9aa2; }
+    .insp-body { flex: 1; overflow-y: auto; padding: 10px 14px; }
+    .insp-group { margin-bottom: 14px; }
+    .insp-group-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; cursor: default; }
+    .insp-group-name { font-weight: 600; font-size: 14px; }
+    .insp-group-count { font-size: 12px; color: var(--muted); }
+    .insp-group-count .gbad { color: #E8463A; font-weight: 600; }
+    .insp-tiles { display: flex; flex-wrap: wrap; gap: 8px; }
+    .insp-tile { position: relative; width: 108px; padding: 7px 9px 7px 11px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); cursor: pointer; text-align: left; font: inherit; }
+    .insp-tile:hover { border-color: var(--accent, #6B2FB3); }
+    .insp-tile::before { content: ""; position: absolute; left: 0; top: 7px; bottom: 7px; width: 3px; border-radius: 999px; background: #9a9aa2; }
+    .insp-tile.ok::before { background: #1DC981; }
+    .insp-tile.warn::before { background: #EFAA17; }
+    .insp-tile.bad { border-color: #E8463A; }
+    .insp-tile.bad::before { background: #E8463A; width: 4px; }
+    .insp-tile.off { opacity: .55; }
+    .insp-tile .t-name { display: block; font-family: var(--mono, ui-monospace, Consolas, monospace); font-size: 12px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .insp-tile .t-sub { display: block; font-size: 11px; color: var(--muted); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .insp-tile.bad .t-sub { color: #E8463A; }
+    .insp-tile.warn .t-sub { color: #EFAA17; }
+    .insp-detail { position: absolute; left: 0; right: 0; bottom: 0; max-height: 46%; display: flex; flex-direction: column; border-top: 1px solid var(--border); background: var(--bg); box-shadow: 0 -6px 24px rgba(0,0,0,.18); }
+    .insp-detail-bar { display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-bottom: 1px solid var(--border); background: var(--surface); }
+    .insp-detail-bar .spacer { flex: 1; }
+    .insp-detail-host { font-family: ui-monospace, Consolas, monospace; font-weight: 650; font-size: 13px; }
+    .insp-detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; padding: 12px 14px; overflow-y: auto; }
+    .insp-metric { border: 1px solid var(--border); border-radius: 8px; background: var(--surface); padding: 8px 10px; }
+    .insp-metric .m-label { font-size: 11px; color: var(--muted); }
+    .insp-metric .m-value { font-size: 15px; font-weight: 650; margin-top: 2px; font-family: ui-monospace, Consolas, monospace; }
+    .insp-metric.bad .m-value { color: #E8463A; }
+    .insp-metric.warn .m-value { color: #EFAA17; }
+    .insp-detail-err { margin: 0 14px 12px; padding: 8px 10px; border: 1px solid #E8463A55; border-radius: 8px; color: #E8463A; font-size: 12px; white-space: pre-wrap; overflow-y: auto; max-height: 120px; }
     #batchResultBody { flex: 1; overflow: auto; }
     .bresult-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
     .bresult-table th {
@@ -392,6 +431,7 @@
       <input id="searchInput" type="search" data-i18n-placeholder="searchPlaceholder" placeholder="搜索资源…" autocomplete="off" />
       <span class="res-count" id="resCount"></span>
       <button id="btnProbe" type="button" data-i18n="probe">探活</button>
+      <button id="btnInspect" type="button" data-i18n="inspect">巡检</button>
     </div>
     <div id="resourceBody"><div class="loading" data-i18n="loading">正在加载…</div></div>
   </div>
@@ -531,6 +571,29 @@
     </div>
   </div>
 
+  <div class="batch-overlay" id="inspectOverlay">
+    <div class="batch-overlay-bar">
+      <span class="title" data-i18n="inspTitle">巡检总览</span>
+      <span class="summary" id="inspMeta"></span>
+      <span class="spacer"></span>
+      <label class="insp-auto"><input type="checkbox" id="inspAuto" /> <span data-i18n="inspAuto">自动刷新（10分钟）</span></label>
+      <button id="inspRefreshBtn" type="button" data-i18n="inspRefresh">刷新</button>
+      <button id="inspectOverlayClose" type="button">✕</button>
+    </div>
+    <div class="insp-chips" id="inspChips"></div>
+    <div class="insp-body" id="inspWall"></div>
+    <div class="insp-detail" id="inspDetail" hidden>
+      <div class="insp-detail-bar">
+        <span class="insp-detail-host" id="inspDetailHost"></span>
+        <span class="spacer"></span>
+        <button id="inspDetailSsh" type="button">SSH</button>
+        <button id="inspDetailClose" type="button">✕</button>
+      </div>
+      <div class="insp-detail-grid" id="inspDetailGrid"></div>
+      <pre class="insp-detail-err" id="inspDetailErr" hidden></pre>
+    </div>
+  </div>
+
   <div class="term-overlay" id="termOverlay">
     <div class="term-bar">
       <span class="term-title" id="termTitle">SSH</span>
@@ -590,6 +653,11 @@
         autoStopped: "已达最大重试次数，请手动重连",
         snippetAddPh: "命令片段，以空格结尾则只插入不执行",
         report: "报告", copyReport: "复制报告", backToTable: "返回表格",
+        inspect: "巡检", inspTitle: "巡检总览", inspRefresh: "刷新", inspAuto: "自动刷新（10分钟）",
+        inspLast: "上次", inspNever: "尚未采集", inspRunning: "采集中…",
+        inspOk: "正常", inspWarn: "偏高", inspBad: "告警", inspOff: "离线", inspPending: "待采集",
+        inspDisk: "磁盘 /", inspMem: "内存", inspLoad: "负载(1m)", inspDocker: "容器", inspDuration: "耗时",
+        inspOffline: "离线", inspFailed: "采集失败", inspNoDocker: "未安装 docker",
         rptTitle: "批量执行结果报告",
         rptCmd: "命令", rptTime: "生成时间",
         rptStat: "统计：共 {total} 台 · 成功 {ok} · 失败 {fail}",
@@ -641,6 +709,11 @@
         autoStopped: "max retries reached, please reconnect manually",
         snippetAddPh: "Command snippet; trailing space inserts without running",
         report: "Report", copyReport: "Copy report", backToTable: "Back to table",
+        inspect: "Inspect", inspTitle: "Fleet inspection", inspRefresh: "Refresh", inspAuto: "Auto refresh (10 min)",
+        inspLast: "Last", inspNever: "Not collected yet", inspRunning: "Collecting…",
+        inspOk: "OK", inspWarn: "Warning", inspBad: "Alert", inspOff: "Offline", inspPending: "Pending",
+        inspDisk: "Disk /", inspMem: "Memory", inspLoad: "Load (1m)", inspDocker: "Containers", inspDuration: "Duration",
+        inspOffline: "offline", inspFailed: "collect failed", inspNoDocker: "no docker",
         rptTitle: "Batch execution report",
         rptCmd: "Command", rptTime: "Generated",
         rptStat: "Stats: {total} total · {ok} ok · {fail} failed",
@@ -1651,6 +1724,231 @@
       }
     }
 
+    // ── Fleet inspection (health heatmap wall) ────────────────────────────
+    let inspData = new Map();       // hostname -> metrics item
+    let inspRunning = false;
+    let inspAutoTimer = null;
+    let inspLastRun = null;         // Date
+    let activeInspectId = null;
+    let inspCollected = 0;
+    let inspDetailHost = null;
+
+    /// Classify one node for the heatmap: {cls: ok|warn|bad|off, sub}.
+    function inspClassify(host) {
+      if (onlineMap.get(host) === false) return { cls: "off", sub: t.inspOffline };
+      const d = inspData.get(host);
+      if (!d) return { cls: "off", sub: t.inspPending };
+      if (d.status !== "ok") {
+        return { cls: "bad", sub: d.status === "timeout" ? t.sTimeout : t.inspFailed };
+      }
+      const disk = d.disk_pct, mem = d.mem_pct, load = d.load1;
+      if ((disk != null && disk >= 90) || (mem != null && mem >= 93)) {
+        return {
+          cls: "bad",
+          sub: disk != null && disk >= 90 ? `${t.inspDisk} ${disk}%` : `${t.inspMem} ${mem}%`,
+        };
+      }
+      if ((disk != null && disk >= 80) || (mem != null && mem >= 85) || (load != null && load >= 4)) {
+        let why = `${t.inspLoad} ${load}`;
+        if (disk != null && disk >= 80) why = `${t.inspDisk} ${disk}%`;
+        else if (mem != null && mem >= 85) why = `${t.inspMem} ${mem}%`;
+        return { cls: "warn", sub: why };
+      }
+      const parts = [];
+      if (disk != null) parts.push(disk + "%");
+      if (load != null) parts.push(Number(load).toFixed(1));
+      return { cls: "ok", sub: parts.join(" / ") || t.inspOk };
+    }
+
+    function renderInspect() {
+      const wall = $("#inspWall");
+      const nodes = resources.filter((r) => r.kind === "node");
+      const groups = new Map();
+      for (const r of nodes) {
+        const g = groupKey(r);
+        if (!groups.has(g)) groups.set(g, []);
+        groups.get(g).push(r);
+      }
+      const order = { bad: 0, warn: 1, off: 2, ok: 3 };
+      const counts = { ok: 0, warn: 0, bad: 0, off: 0 };
+      wall.innerHTML = "";
+      for (const g of [...groups.keys()].sort((a, b) => a.localeCompare(b))) {
+        const items = groups.get(g).map((r) => ({ r, c: inspClassify(r.name) }));
+        items.sort((a, b) => order[a.c.cls] - order[b.c.cls] || a.r.name.localeCompare(b.r.name));
+        for (const { c } of items) counts[c.cls]++;
+        const badN = items.filter((x) => x.c.cls === "bad").length;
+
+        const groupEl = document.createElement("div");
+        groupEl.className = "insp-group";
+        const head = document.createElement("div");
+        head.className = "insp-group-head";
+        const nm = document.createElement("span");
+        nm.className = "insp-group-name";
+        nm.textContent = g;
+        const ct = document.createElement("span");
+        ct.className = "insp-group-count";
+        ct.textContent = String(items.length);
+        if (badN) {
+          const b = document.createElement("span");
+          b.className = "gbad";
+          b.textContent = ` · ${badN} ${t.inspBad}`;
+          ct.appendChild(b);
+        }
+        head.append(nm, ct);
+        const tiles = document.createElement("div");
+        tiles.className = "insp-tiles";
+        for (const { r, c } of items) {
+          const tile = document.createElement("button");
+          tile.type = "button";
+          tile.className = "insp-tile " + c.cls;
+          const tn = document.createElement("span");
+          tn.className = "t-name";
+          tn.textContent = r.name;
+          tn.title = r.name;
+          const ts = document.createElement("span");
+          ts.className = "t-sub";
+          ts.textContent = c.sub;
+          tile.append(tn, ts);
+          tile.addEventListener("click", () => showInspDetail(r.name));
+          tiles.appendChild(tile);
+        }
+        groupEl.append(head, tiles);
+        wall.appendChild(groupEl);
+      }
+
+      const chips = $("#inspChips");
+      chips.innerHTML = "";
+      const mk = (cls, label, n) => {
+        const s = document.createElement("span");
+        s.className = "insp-chip";
+        const dot = document.createElement("i");
+        dot.className = "insp-dot " + cls;
+        const b = document.createElement("b");
+        b.textContent = String(n);
+        s.append(dot, document.createTextNode(label + " "), b);
+        return s;
+      };
+      chips.append(
+        mk("ok", t.inspOk, counts.ok),
+        mk("warn", t.inspWarn, counts.warn),
+        mk("bad", t.inspBad, counts.bad),
+        mk("off", t.inspOff, counts.off)
+      );
+
+      const meta = $("#inspMeta");
+      if (inspRunning) {
+        meta.textContent = `${t.inspRunning} ${inspCollected}/${nodes.length}`;
+      } else {
+        meta.textContent = inspLastRun
+          ? `${t.inspLast} ${inspLastRun.toLocaleTimeString()}`
+          : t.inspNever;
+      }
+    }
+
+    function onInspectItem(params) {
+      if (!params || params.inspect_id !== activeInspectId) return;
+      inspData.set(params.host, params);
+      inspCollected++;
+      if ($("#inspectOverlay").classList.contains("open")) renderInspect();
+    }
+
+    function showInspDetail(host) {
+      inspDetailHost = host;
+      const det = $("#inspDetail");
+      det.hidden = false;
+      $("#inspDetailHost").textContent = host;
+      const grid = $("#inspDetailGrid");
+      grid.innerHTML = "";
+      const errEl = $("#inspDetailErr");
+      const mkMetric = (label, value, cls) => {
+        const m = document.createElement("div");
+        m.className = "insp-metric" + (cls ? " " + cls : "");
+        const l = document.createElement("div");
+        l.className = "m-label";
+        l.textContent = label;
+        const v = document.createElement("div");
+        v.className = "m-value";
+        v.textContent = value;
+        m.append(l, v);
+        return m;
+      };
+      const statusText = { ok: t.sOk, fail: t.sFail, timeout: t.sTimeout, error: t.sError };
+      const d = inspData.get(host);
+      if (!d) {
+        grid.append(mkMetric(t.bColStatus, inspClassify(host).sub));
+        errEl.hidden = true;
+        return;
+      }
+      const diskCls = d.disk_pct >= 90 ? "bad" : d.disk_pct >= 80 ? "warn" : "";
+      const memCls = d.mem_pct >= 93 ? "bad" : d.mem_pct >= 85 ? "warn" : "";
+      const loadCls = d.load1 >= 4 ? "warn" : "";
+      grid.append(
+        mkMetric(t.bColStatus, statusText[d.status] || d.status),
+        mkMetric(t.inspDisk, d.disk_pct != null ? `${d.disk_pct}% (${d.disk_avail})` : "—", diskCls),
+        mkMetric(t.inspMem, d.mem_pct != null ? `${d.mem_pct}%` : "—", memCls),
+        mkMetric(t.inspLoad, d.load1 != null ? String(d.load1) : "—", loadCls),
+        mkMetric(t.inspDocker, d.containers != null ? String(d.containers) : t.inspNoDocker),
+        mkMetric(t.inspDuration, d.duration_ms != null ? `${d.duration_ms}ms` : "—")
+      );
+      if (d.stderr) {
+        errEl.hidden = false;
+        errEl.textContent = d.stderr;
+      } else {
+        errEl.hidden = true;
+      }
+    }
+
+    async function runInspect() {
+      if (inspRunning) return;
+      const nodes = resources.filter((r) => r.kind === "node");
+      if (!nodes.length) return;
+      inspRunning = true;
+      inspCollected = 0;
+      const btn = $("#inspRefreshBtn");
+      btn.disabled = true;
+      renderInspect();
+      const inspectId = "i" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+      activeInspectId = inspectId;
+      try {
+        // Skip known-offline nodes — no point burning satellite airtime on
+        // them; they stay grey on the wall.
+        const hosts = nodes.map((r) => r.name).filter((h) => onlineMap.get(h) !== false);
+        await callSidecar(
+          "teleport/inspect",
+          { connectionId, hosts, concurrency: 20, timeoutSecs: 60, batchId: inspectId },
+          600000
+        );
+        inspLastRun = new Date();
+      } catch (e) {
+        const hint = $("#hint");
+        hint.hidden = false;
+        hint.textContent = `inspect error: ${String((e && e.message) || e)}`;
+      } finally {
+        inspRunning = false;
+        activeInspectId = null;
+        btn.disabled = false;
+        renderInspect();
+      }
+    }
+
+    function openInspectOverlay() {
+      $("#inspectOverlay").classList.add("open");
+      renderInspect();
+      if (!inspData.size && !inspRunning) runInspect();
+    }
+
+    function setInspectAuto(on) {
+      if (inspAutoTimer) {
+        clearInterval(inspAutoTimer);
+        inspAutoTimer = null;
+      }
+      if (on) {
+        inspAutoTimer = setInterval(() => {
+          if (!inspRunning && $("#inspectOverlay").classList.contains("open")) runInspect();
+        }, 600000);
+      }
+    }
+
     function setBatchRunning(v) {
       batchRunning = v;
       $("#batchRunBtn").disabled = v;
@@ -2148,6 +2446,21 @@
       activeBatchId = null;
     });
     $("#btnProbe").addEventListener("click", runProbe);
+    $("#btnInspect").addEventListener("click", openInspectOverlay);
+    $("#inspRefreshBtn").addEventListener("click", runInspect);
+    $("#inspectOverlayClose").addEventListener("click", () => {
+      $("#inspectOverlay").classList.remove("open");
+      $("#inspDetail").hidden = true;
+      setInspectAuto(false);
+    });
+    $("#inspAuto").addEventListener("change", (e) => setInspectAuto(e.target.checked));
+    $("#inspDetailClose").addEventListener("click", () => {
+      $("#inspDetail").hidden = true;
+      inspDetailHost = null;
+    });
+    $("#inspDetailSsh").addEventListener("click", () => {
+      if (inspDetailHost) openSshTerminal(inspDetailHost);
+    });
 
     $("#fwdCreateBtn").addEventListener("click", createForward);
     $("#forwardOverlayClose").addEventListener("click", () => {
@@ -2202,6 +2515,9 @@
           }
           if (ev && ev.method === "transfer/item") {
             onTransferItem(ev.params || {});
+          }
+          if (ev && ev.method === "inspect/item") {
+            onInspectItem(ev.params || {});
           }
         });
 

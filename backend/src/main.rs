@@ -11,6 +11,7 @@
 
 mod batch;
 mod forward;
+mod inspect;
 mod login;
 mod resources;
 mod ssh;
@@ -110,6 +111,9 @@ impl PluginHandler for TeleportPlugin {
             // File transfer.
             "teleport/transferUpload" => self.handle_transfer_upload(&params, emitter),
             "teleport/transferDownload" => self.handle_transfer_download(&params),
+
+            // Fleet inspection (metrics heatmap).
+            "teleport/inspect" => self.handle_inspect(&params, emitter),
 
             // Terminal lifecycle (fire-and-forget notifications from the UI).
             "ssh/terminal/resize" => {
@@ -512,6 +516,53 @@ impl TeleportPlugin {
 
     fn handle_forward_list(&self) -> Value {
         json!({ "forwards": self.forward.list() })
+    }
+
+    /// Fan the metrics command out to every requested node (fleet heatmap).
+    fn handle_inspect(
+        &self,
+        params: &Value,
+        emitter: &PluginEmitter,
+    ) -> Result<Value, PluginError> {
+        let conn_id = params
+            .get("connectionId")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let setting = conn_setting(conn_id).ok_or_else(|| {
+            PluginError::new(-32000, "connection settings unavailable, please login first")
+        })?;
+        let hosts: Vec<String> = params
+            .get("hosts")
+            .and_then(|v| v.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .filter(|s| !s.is_empty())
+                    .collect()
+            })
+            .unwrap_or_default();
+        if hosts.is_empty() {
+            return Err(PluginError::new(-32602, "hosts must contain at least one node"));
+        }
+        let concurrency = params
+            .get("concurrency")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(20) as usize;
+        // Satellite links: default 60s per node is generous but bounded.
+        let timeout_secs = params
+            .get("timeoutSecs")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(60);
+
+        let opts = inspect::InspectOptions {
+            tsh: setting.tsh.clone(),
+            login: setting.ssh_login.clone(),
+            hosts,
+            concurrency,
+            timeout_secs,
+            inspect_id: gen_batch_id(params),
+        };
+        Ok(inspect::run(opts, emitter.clone()))
     }
 
     /// Inject a Kubernetes cluster's credentials into the local kubeconfig via
