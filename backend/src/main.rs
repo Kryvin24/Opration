@@ -10,9 +10,11 @@
 //   · teleport/listResources   — nodes, apps, and kube clusters (Phase 2)
 
 mod batch;
+mod diag;
 mod forward;
 mod inspect;
 mod login;
+mod pool;
 mod resources;
 mod ssh;
 mod transfer;
@@ -114,6 +116,9 @@ impl PluginHandler for TeleportPlugin {
 
             // Fleet inspection (metrics heatmap).
             "teleport/inspect" => self.handle_inspect(&params, emitter),
+
+            // Diagnostics bundle (tsh version/status + sidecar log tail).
+            "teleport/diagBundle" => self.handle_diag_bundle(&params),
 
             // Terminal lifecycle (fire-and-forget notifications from the UI).
             "ssh/terminal/resize" => {
@@ -563,6 +568,20 @@ impl TeleportPlugin {
             inspect_id: gen_batch_id(params),
         };
         Ok(inspect::run(opts, emitter.clone()))
+    }
+
+    /// Write a diagnostics bundle (tsh version/status + sidecar log tail) to
+    /// %TEMP% and return its path for the UI to display.
+    fn handle_diag_bundle(&self, params: &Value) -> Result<Value, PluginError> {
+        let conn_id = params
+            .get("connectionId")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let tsh = conn_setting(conn_id)
+            .map(|s| s.tsh)
+            .unwrap_or_else(|| "tsh.exe".to_string());
+        diag::run(&tsh, conn_id, env!("CARGO_PKG_VERSION"))
+            .map_err(|e| PluginError::new(-32000, e))
     }
 
     /// Inject a Kubernetes cluster's credentials into the local kubeconfig via

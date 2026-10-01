@@ -14,14 +14,12 @@
 //! ```
 //! `containers` is null when docker is not installed on the node.
 
-use std::io::Read;
-use std::process::{Command, Stdio};
-use std::sync::{mpsc, Arc, Mutex};
-use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use dbx_plugin_sdk::{trace, PluginEmitter};
 use serde_json::{json, Value};
+
+use crate::pool;
 
 const STDERR_CAP: usize = 16_384;
 
@@ -47,47 +45,19 @@ pub fn run(opts: InspectOptions, emitter: PluginEmitter) -> Value {
         opts.inspect_id, total, opts.concurrency, opts.timeout_secs
     ));
 
-    let (task_tx, task_rx) = mpsc::channel::<String>();
-    let (res_tx, res_rx) = mpsc::channel::<Value>();
-    let task_rx = Arc::new(Mutex::new(task_rx));
+    let tsh = opts.tsh.clone();
+    let login = opts.login.clone();
+    let inspect_id = opts.inspect_id.clone();
+    let timeout_secs = opts.timeout_secs;
 
-    let workers = opts.concurrency.clamp(1, 30).min(total.max(1));
-
-    let mut handles = Vec::new();
-    for _ in 0..workers {
-        let rx = task_rx.clone();
-        let tx = res_tx.clone();
-        let em = emitter.clone();
-        let tsh = opts.tsh.clone();
-        let login = opts.login.clone();
-        let inspect_id = opts.inspect_id.clone();
-        let timeout_secs = opts.timeout_secs;
-        handles.push(thread::spawn(move || loop {
-            let host = match rx.lock() {
-                Ok(guard) => match guard.recv() {
-                    Ok(h) => h,
-                    Err(_) => break,
-                },
-                Err(_) => break,
-            };
-            let item = run_one(&tsh, &login, &host, timeout_secs, &inspect_id);
-            let _ = em.event("inspect/item", item.clone());
-            let _ = tx.send(item);
-        }));
-    }
-    drop(res_tx);
-    for host in opts.hosts {
-        let _ = task_tx.send(host);
-    }
-    drop(task_tx);
-
-    let mut results: Vec<Value> = Vec::with_capacity(total);
-    for item in res_rx {
-        results.push(item);
-    }
-    for h in handles {
-        let _ = h.join();
-    }
+    let results = pool::run_pool(
+        opts.hosts.clone(),
+        opts.concurrency,
+        30,
+        emitter,
+        "inspect/item",
+        move |host| run_one(&tsh, &login, host, timeout_secs, &inspect_id),
+    );
 
     let ok_count = results
         .iter()
@@ -113,15 +83,8 @@ pub fn run(opts: InspectOptions, emitter: PluginEmitter) -> Value {
 
 fn run_one(tsh: &str, login: &str, host: &str, timeout_secs: u64, inspect_id: &str) -> Value {
     let started = Instant::now();
-    let spawn_result = Command::new(tsh)
-        .args(["ssh", "--login", login, host, INSPECT_CMD])
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn();
-
-    let mut child = match spawn_result {
-        Ok(c) => c,
+    let out = match pool::run_tsh_ssh(tsh, login, host, INSPECT_CMD, timeout_secs, 65_536, STDERR_CAP) {
+        Ok(o) => o,
         Err(e) => {
             return json!({
                 "inspect_id": inspect_id, "host": host, "status": "error",
@@ -131,49 +94,12 @@ fn run_one(tsh: &str, login: &str, host: &str, timeout_secs: u64, inspect_id: &s
         }
     };
 
-    let stdout_handle = child.stdout.take().map(|r| {
-        thread::spawn(move || drain_capped(r, 65_536))
-    });
-    let stderr_handle = child.stderr.take().map(|r| {
-        thread::spawn(move || drain_capped(r, STDERR_CAP))
-    });
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
 
-    let timeout = Duration::from_secs(timeout_secs.max(1));
-    let mut timed_out = false;
-    let mut exit_code: Option<i32> = None;
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) => {
-                exit_code = status.code();
-                break;
-            }
-            Ok(None) => {
-                if started.elapsed() >= timeout {
-                    timed_out = true;
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    break;
-                }
-                thread::sleep(Duration::from_millis(120));
-            }
-            Err(_) => break,
-        }
-    }
-
-    let stdout_bytes = stdout_handle
-        .and_then(|h| h.join().ok())
-        .map(|(b, _)| b)
-        .unwrap_or_default();
-    let stderr_bytes = stderr_handle
-        .and_then(|h| h.join().ok())
-        .map(|(b, _)| b)
-        .unwrap_or_default();
-    let stdout = String::from_utf8_lossy(&stdout_bytes).into_owned();
-    let stderr = String::from_utf8_lossy(&stderr_bytes).trim().to_string();
-
-    let status = if timed_out {
+    let status = if out.timed_out {
         "timeout"
-    } else if exit_code == Some(0) {
+    } else if out.exit_code == Some(0) {
         "ok"
     } else {
         "fail"
@@ -183,7 +109,7 @@ fn run_one(tsh: &str, login: &str, host: &str, timeout_secs: u64, inspect_id: &s
         "inspect_id": inspect_id,
         "host": host,
         "status": status,
-        "duration_ms": started.elapsed().as_millis() as u64,
+        "duration_ms": out.duration_ms,
         "stderr": if status == "ok" { String::new() } else { stderr },
     });
     if status == "ok" {
@@ -271,29 +197,6 @@ pub fn parse_metrics(stdout: &str) -> Value {
         "load1": load1,
         "containers": containers,
     })
-}
-
-fn drain_capped<R: Read>(mut reader: R, cap: usize) -> (Vec<u8>, bool) {
-    let mut chunk = [0u8; 4096];
-    let mut out = Vec::new();
-    let mut truncated = false;
-    loop {
-        match reader.read(&mut chunk) {
-            Ok(0) | Err(_) => break,
-            Ok(n) => {
-                if out.len() < cap {
-                    let take = n.min(cap - out.len());
-                    out.extend_from_slice(&chunk[..take]);
-                    if take < n {
-                        truncated = true;
-                    }
-                } else {
-                    truncated = true;
-                }
-            }
-        }
-    }
-    (out, truncated)
 }
 
 #[cfg(test)]
