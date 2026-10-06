@@ -8,6 +8,14 @@
   <link rel="stylesheet" href="vendor/xterm.css" />
 </head>
 <body>
+  <div id="appMain">
+  <!-- 标签栏：始终固定在最顶部，类似浏览器标签 -->
+  <div class="tab-bar" id="tabBar" hidden></div>
+
+  <!-- 标签内容区：所有标签页面板都在此区域内铺满，尺寸一致 -->
+  <div id="tabContent">
+  <!-- 首页视图：头部信息 + 资源列表，作为一个完整页面包含在首页标签内 -->
+  <div id="homeView">
   <div id="appHeader">
   <h1>
     <svg class="logo" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -35,12 +43,6 @@
   <p class="hint" id="hint" hidden></p>
   </div><!-- /#appHeader -->
 
-  <div id="appMain">
-  <!-- 标签栏：打开的功能面板以标签页形式共存，类似浏览器标签 -->
-  <div class="tab-bar" id="tabBar" hidden></div>
-
-  <!-- 标签内容区：所有标签页面板（含首页资源列表）都在此区域内铺满，尺寸一致 -->
-  <div id="tabContent">
   <div class="panel" id="resourcePanel">
     <div class="panel-head">
       <h2 data-i18n="resources">资源</h2>
@@ -59,6 +61,7 @@
     </div>
     <div id="resourceBody"><div class="loading" data-i18n="loading">正在加载…</div></div>
   </div>
+  </div><!-- /#homeView -->
 
   <div class="batch-bar" id="batchBar">
     <div class="batch-bar-row">

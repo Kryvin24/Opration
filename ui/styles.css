@@ -16,7 +16,7 @@
     [hidden] { display: none !important; }
     body {
       margin: 0;
-      padding: 20px 24px 32px;
+      padding: 0;
       background: var(--bg);
       color: var(--text);
       font: 14px/1.55 "Inter", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
@@ -126,23 +126,24 @@
     .hint { font-size: 12px; color: var(--muted); margin: -10px 0 16px; }
     code { font-family: ui-monospace, Consolas, monospace; background: var(--surface-strong); padding: 1px 5px; border-radius: 4px; }
 
-    /* ===== App layout: fixed header + scrollable main workspace ===== */
-    #appHeader { position: relative; z-index: 1; }
+    /* ===== App layout: tab bar on top + content fills the rest ===== */
     #appMain {
-      position: fixed; left: 0; right: 0; bottom: 0;
-      top: var(--header-h, 130px);
+      position: fixed; inset: 0;
       display: flex; flex-direction: column;
       overflow: hidden;
     }
     /* 标签栏下方的统一内容区：所有标签页面板都铺满此区域，窗口尺寸完全一致 */
     #tabContent {
       position: relative; flex: 1; min-height: 0;
-      display: flex; flex-direction: column;
       overflow: hidden;
     }
-    /* 首页资源面板：填满内容区，节点列表在面板内部滚动 */
-    #resourcePanel { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-    #resourceBody { flex: 1; min-height: 0; overflow-y: auto; }
+    /* 首页视图：头部信息与资源列表同属首页标签，整页一起滚动 */
+    #homeView {
+      position: absolute; inset: 0;
+      overflow-y: auto;
+      padding: 16px 20px 32px;
+    }
+    #appHeader { margin-bottom: 14px; }
 
     /* ===== Tab bar (browser-like multi-panel tabs) ===== */
     .tab-bar {

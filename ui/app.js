@@ -557,16 +557,6 @@
     const openTabs = [];          // [{id, type, title, sessionId?, nodeName?}]
     let activeTabId = null;
 
-    function getHeaderHeight() {
-      const h = $("#appHeader");
-      if (!h || h.hidden) return 0;
-      // 用视口坐标 bottom（已含 body 顶部 padding），避免内容区与头部重叠
-      return Math.max(0, Math.round(h.getBoundingClientRect().bottom));
-    }
-    function updateHeaderHeight() {
-      document.documentElement.style.setProperty("--header-h", getHeaderHeight() + "px");
-    }
-
     function renderTabBar() {
       const bar = $("#tabBar");
       bar.innerHTML = "";
@@ -621,17 +611,15 @@
       if (!tab) { showResourcePanel(); return; }
       activeTabId = id;
       const isHome = tab.type === TAB_HOME;
-      // 头部（logo/状态卡/操作按钮）只在首页标签显示，其他标签页内容区全宽。
-      $("#appHeader").hidden = !isHome;
-      updateHeaderHeight();
       // Hide everything first.
       document.querySelectorAll(".batch-overlay, .term-overlay").forEach((el) => el.classList.remove("open"));
       if (isHome) {
-        $("#resourcePanel").style.display = "";
+        // 首页视图（头部信息 + 资源列表）整体属于首页标签，在标签栏下方显示
+        $("#homeView").style.display = "";
         $("#batchBar").style.display = "";
       } else {
-        // Hide resource panel when a function tab is active.
-        $("#resourcePanel").style.display = "none";
+        // 功能标签：隐藏整个首页视图，由对应面板铺满内容区
+        $("#homeView").style.display = "none";
         $("#batchBar").style.display = "none";
         const overlayId = OVERLAY_FOR_TYPE[tab.type];
         if (overlayId) {
@@ -2073,8 +2061,6 @@
         // 保险：加载时关闭所有功能标签页，回到首页（资源列表）
         [...openTabs].forEach((tab) => closeTab(tab.id));
         activateTab(ensureHomeTab().id);
-        updateHeaderHeight();
-        window.addEventListener("resize", updateHeaderHeight);
         const locale = (window.dbxPlugin.locale || "zh-CN").toLowerCase();
         t = I18N[locale] || I18N["zh-cn"];
         connectionId = (ctx && ctx.connectionId) || window.dbxPlugin.context?.connectionId || null;
@@ -2120,6 +2106,3 @@
         hint.textContent = `init error: ${String((e && e.message) || e)}`;
       }
     });
-
-    // 脚本加载即量一次头部高度，避免 ready 前内容区与头部短暂重叠
-    try { updateHeaderHeight(); } catch (e) {}

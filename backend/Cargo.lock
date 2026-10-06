@@ -36,7 +36,7 @@ dependencies = [
 
 [[package]]
 name = "dbx-teleport-sidecar"
-version = "0.1.30"
+version = "0.1.31"
 dependencies = [
  "dbx-plugin-sdk",
  "portable-pty",
