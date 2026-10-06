@@ -531,6 +531,8 @@
     // -----------------------------------------------------------------------
     // Tab system (browser-like multi-panel tabs)
     // -----------------------------------------------------------------------
+    const TAB_HOME = "home";       // 首页标签：资源列表，常驻且不可关闭
+    const HOME_TAB_ID = "tab-home";
     const TAB_SSH = "ssh";
     const TAB_BATCH = "batch";
     const TAB_FORWARD = "forward";
@@ -557,7 +559,9 @@
 
     function getHeaderHeight() {
       const h = $("#appHeader");
-      return h ? h.offsetHeight : 130;
+      if (!h || h.hidden) return 0;
+      // 用视口坐标 bottom（已含 body 顶部 padding），避免内容区与头部重叠
+      return Math.max(0, Math.round(h.getBoundingClientRect().bottom));
     }
     function updateHeaderHeight() {
       document.documentElement.style.setProperty("--header-h", getHeaderHeight() + "px");
@@ -572,48 +576,70 @@
         const item = document.createElement("div");
         item.className = "tab-item" + (tab.id === activeTabId ? " active" : "");
         item.dataset.tabId = tab.id;
+        if (tab.type === TAB_HOME) {
+          const ico = document.createElement("span");
+          ico.className = "tab-ico";
+          ico.innerHTML = '<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><path d="M12 3.4 3.5 11h2.3v8.6h4.6v-5.4h3.2v5.4h4.6V11h2.3z" fill="currentColor"/></svg>';
+          item.appendChild(ico);
+        }
         const title = document.createElement("span");
         title.className = "tab-title";
         title.textContent = tab.title;
-        const closeBtn = document.createElement("button");
-        closeBtn.className = "tab-close";
-        closeBtn.type = "button";
-        closeBtn.textContent = "✕";
-        closeBtn.title = "关闭";
-        closeBtn.addEventListener("click", (e) => { e.stopPropagation(); closeTab(tab.id); });
-        item.addEventListener("click", () => activateTab(tab.id));
         item.appendChild(title);
-        item.appendChild(closeBtn);
+        if (tab.type !== TAB_HOME) {
+          // 首页标签常驻，不提供关闭按钮
+          const closeBtn = document.createElement("button");
+          closeBtn.className = "tab-close";
+          closeBtn.type = "button";
+          closeBtn.textContent = "✕";
+          closeBtn.title = "关闭";
+          closeBtn.addEventListener("click", (e) => { e.stopPropagation(); closeTab(tab.id); });
+          item.appendChild(closeBtn);
+        }
+        item.addEventListener("click", () => activateTab(tab.id));
         bar.appendChild(item);
       });
     }
 
+    /// 资源列表即“首页”标签：常驻、不可关闭、始终排在最前。
+    function ensureHomeTab() {
+      let home = openTabs.find((t) => t.type === TAB_HOME);
+      if (!home) {
+        home = { id: HOME_TAB_ID, type: TAB_HOME, title: "首页" };
+        openTabs.unshift(home);
+      }
+      return home;
+    }
+
     function showResourcePanel() {
-      // Hide all overlays, show resource list + batch bar.
-      document.querySelectorAll(".batch-overlay, .term-overlay").forEach((el) => el.classList.remove("open"));
-      $("#resourcePanel").style.display = "";
-      $("#batchBar").style.display = "";
+      // 资源列表 = 首页标签，激活它即可。
+      activateTab(ensureHomeTab().id);
     }
 
     function activateTab(id) {
-      activeTabId = id;
       const tab = openTabs.find((t) => t.id === id);
+      if (!tab) { showResourcePanel(); return; }
+      activeTabId = id;
+      const isHome = tab.type === TAB_HOME;
+      // 头部（logo/状态卡/操作按钮）只在首页标签显示，其他标签页内容区全宽。
+      $("#appHeader").hidden = !isHome;
+      updateHeaderHeight();
       // Hide everything first.
       document.querySelectorAll(".batch-overlay, .term-overlay").forEach((el) => el.classList.remove("open"));
-      if (!tab) {
-        showResourcePanel();
-        renderTabBar();
-        return;
-      }
-      // Hide resource panel when a tab is active.
-      $("#resourcePanel").style.display = "none";
-      $("#batchBar").style.display = "none";
-      const overlayId = OVERLAY_FOR_TYPE[tab.type];
-      if (overlayId) {
-        document.getElementById(overlayId)?.classList.add("open");
-      } else if (tab.type === TAB_SSH) {
-        // Terminal overlay is stored on the session object.
-        if (tab.session && tab.session.el) tab.session.el.classList.add("open");
+      if (isHome) {
+        $("#resourcePanel").style.display = "";
+        $("#batchBar").style.display = "";
+      } else {
+        // Hide resource panel when a function tab is active.
+        $("#resourcePanel").style.display = "none";
+        $("#batchBar").style.display = "none";
+        const overlayId = OVERLAY_FOR_TYPE[tab.type];
+        if (overlayId) {
+          document.getElementById(overlayId)?.classList.add("open");
+        } else if (tab.type === TAB_SSH) {
+          // Terminal overlay is stored on the session object.
+          if (tab.session && tab.session.el) tab.session.el.classList.add("open");
+        }
       }
       renderTabBar();
     }
@@ -635,6 +661,7 @@
       const idx = openTabs.findIndex((t) => t.id === id);
       if (idx === -1) return;
       const tab = openTabs[idx];
+      if (tab.type === TAB_HOME) return; // 首页常驻，不可关闭
       // Cleanup per-type.
       if (tab.type === TAB_SSH && tab.session) {
         tab.session.destroy();
@@ -1994,6 +2021,7 @@
         // A logout invalidates everything derived from the old session:
         // probe results, inspection metrics, and the batch selection all
         // belong to credentials that no longer exist.
+        [...openTabs].forEach((tab) => { if (tab.type !== TAB_HOME) closeTab(tab.id); });
         selectedHosts.clear();
         onlineMap.clear();
         slowHosts.clear();
@@ -2042,8 +2070,9 @@
 
     window.dbxPlugin.ready.then((ctx) => {
       try {
-        // 保险：加载时关闭所有打开的标签页，回到资源列表
+        // 保险：加载时关闭所有功能标签页，回到首页（资源列表）
         [...openTabs].forEach((tab) => closeTab(tab.id));
+        activateTab(ensureHomeTab().id);
         updateHeaderHeight();
         window.addEventListener("resize", updateHeaderHeight);
         const locale = (window.dbxPlugin.locale || "zh-CN").toLowerCase();
@@ -2091,3 +2120,6 @@
         hint.textContent = `init error: ${String((e && e.message) || e)}`;
       }
     });
+
+    // 脚本加载即量一次头部高度，避免 ready 前内容区与头部短暂重叠
+    try { updateHeaderHeight(); } catch (e) {}

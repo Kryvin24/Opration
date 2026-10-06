@@ -12,6 +12,8 @@
       --radius: 10px;
     }
     * { box-sizing: border-box; }
+    /* 保护 hidden 属性：防止 display:flex 等规则将其覆盖导致覆盖层/标签栏常驻 */
+    [hidden] { display: none !important; }
     body {
       margin: 0;
       padding: 20px 24px 32px;
@@ -129,18 +131,27 @@
     #appMain {
       position: fixed; left: 0; right: 0; bottom: 0;
       top: var(--header-h, 130px);
+      display: flex; flex-direction: column;
       overflow: hidden;
     }
+    /* 标签栏下方的统一内容区：所有标签页面板都铺满此区域，窗口尺寸完全一致 */
+    #tabContent {
+      position: relative; flex: 1; min-height: 0;
+      display: flex; flex-direction: column;
+      overflow: hidden;
+    }
+    /* 首页资源面板：填满内容区，节点列表在面板内部滚动 */
+    #resourcePanel { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+    #resourceBody { flex: 1; min-height: 0; overflow-y: auto; }
 
     /* ===== Tab bar (browser-like multi-panel tabs) ===== */
     .tab-bar {
-      position: sticky; top: 0; z-index: 10001;
+      flex: none;
       display: flex; align-items: center; gap: 2px;
       padding: 6px 10px 0;
       border-bottom: 1px solid var(--border);
       background: var(--surface);
       overflow-x: auto; flex-wrap: nowrap;
-      flex-shrink: 0;
     }
     .tab-bar::-webkit-scrollbar { height: 0; }
     .tab-item {
@@ -155,12 +166,13 @@
     .tab-item:hover { background: var(--surface-strong); }
     .tab-item.active {
       background: var(--surface); color: var(--text);
-      font-weight: 600; border-bottom-color: var(--surface);
+      font-weight: 600; border-bottom-color: var(--bg);
       position: relative; top: 1px;
     }
     .tab-item .tab-title {
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
+    .tab-item .tab-ico { display: inline-flex; align-items: center; flex: none; color: inherit; }
     .tab-item .tab-close {
       border: none; background: none; cursor: pointer;
       color: var(--muted); font-size: 14px; line-height: 1;

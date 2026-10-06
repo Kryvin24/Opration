@@ -39,6 +39,8 @@
   <!-- 标签栏：打开的功能面板以标签页形式共存，类似浏览器标签 -->
   <div class="tab-bar" id="tabBar" hidden></div>
 
+  <!-- 标签内容区：所有标签页面板（含首页资源列表）都在此区域内铺满，尺寸一致 -->
+  <div id="tabContent">
   <div class="panel" id="resourcePanel">
     <div class="panel-head">
       <h2 data-i18n="resources">资源</h2>
@@ -244,6 +246,7 @@
   </template>
 
   <div id="terminalContainer"></div>
+  </div><!-- /#tabContent -->
   </div><!-- /#appMain -->
 
   <script src="vendor/xterm.js"></script>
