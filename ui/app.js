@@ -960,9 +960,14 @@
     // Quick command snippets
     // -----------------------------------------------------------------------
     const BUILTIN_SNIPPETS = [
-      "uptime", "df -h", "free -m", "docker ps", "docker ps -a",
-      "ss -tlnp", "ps aux", "ip addr", "last -n 10", "dmesg | tail -30",
-      "ls -lht", "systemctl status ", "journalctl -u ", "tail -f ", "grep -rn ",
+      "uptime", "ip addr", "nproc", "df -h", "free -h",
+      // 尾随空格 = 只粘贴不执行，需补充参数（进程名）
+      "ps -ef | grep ",
+      "du -sh * | sort -h", "docker ps",
+      // 需补充容器名/命令
+      "docker exec -it ",
+      "docker logs -f --tail=100 ",
+      "docker system df", "docker system prune",
     ];
     const SNIPPET_STORE_KEY = "dbx_tp_snippets_v1";
     let customSnippets = loadCustomSnippets();
@@ -991,14 +996,24 @@
       scroll.innerHTML = "";
       const buildChip = (text, custom) => {
         const chip = document.createElement("button");
+        const insertOnly = text.slice(-1) === " ";
         chip.type = "button";
-        chip.className = "snippet-chip" + (custom ? " custom" : "");
+        chip.className = "snippet-chip"
+          + (custom ? " custom" : "")
+          + (insertOnly ? " insert-only" : "");
         const label = document.createElement("span");
         label.textContent = text;
-        chip.title = text.slice(-1) === " "
-          ? (t.snippetAddPh ? "点击插入，不自动执行" : "insert only")
-          : "click to run";
+        chip.title = insertOnly
+          ? "点击插入，不自动执行（需补充参数）"
+          : "点击直接执行";
         chip.appendChild(label);
+        if (insertOnly) {
+          // 视觉标识：铅笔图标表示只粘贴、需手动补充后回车
+          const mark = document.createElement("span");
+          mark.className = "chip-mark";
+          mark.textContent = "✎";
+          chip.appendChild(mark);
+        }
         chip.addEventListener("click", () => sendSnippetTo(sess, text));
         if (custom) {
           const x = document.createElement("span");

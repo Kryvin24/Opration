@@ -3,7 +3,7 @@
   "manifest_version": 1,
   "id": "io.zdiai.teleport",
   "name": "Teleport",
-  "version": "0.1.31",
+  "version": "0.1.32",
   "publisher": "zdiai",
   "description": "Browse Teleport nodes and open SSH terminals for your cluster at teleport.zdiai.com.",
   "icon": "assets/plugin.svg",
@@ -66,8 +66,7 @@
           "label": "Teleport user",
           "type": "text",
           "binding": "username",
-          "required": true,
-          "placeholder": "xiangkai"
+          "required": true
         },
         {
           "key": "password",

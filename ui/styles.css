@@ -231,6 +231,10 @@
     }
     .snippet-chip:hover { border-color: var(--brand); color: var(--brand); }
     .snippet-chip.custom { border-style: dashed; }
+    /* 只粘贴不执行的命令：虚线边框 + 琥珀色提示，与直接执行的命令区分 */
+    .snippet-chip.insert-only { border-style: dashed; color: var(--warning); }
+    .snippet-chip.insert-only:hover { border-color: var(--warning); color: var(--warning); background: #fdf6e9; }
+    .snippet-chip .chip-mark { margin-left: 5px; font-size: 10px; }
     .snippet-chip .chip-x { margin-left: 6px; color: var(--danger); }
     .snippet-add-row { display: flex; align-items: center; gap: 6px; flex: none; }
     .snippet-add-row[hidden] { display: none; }
