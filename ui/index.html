@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="vendor/xterm.css" />
 </head>
 <body>
+  <div id="appHeader">
   <h1>
     <svg class="logo" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M12 2L3 7v10l9 5 9-5V7l-9-5z" fill="#512fc9"/>
@@ -32,8 +33,13 @@
     <button id="btnLogout" class="danger" type="button"><span data-i18n="logout">登出</span></button>
   </div>
   <p class="hint" id="hint" hidden></p>
+  </div><!-- /#appHeader -->
 
-  <div class="panel">
+  <div id="appMain">
+  <!-- 标签栏：打开的功能面板以标签页形式共存，类似浏览器标签 -->
+  <div class="tab-bar" id="tabBar" hidden></div>
+
+  <div class="panel" id="resourcePanel">
     <div class="panel-head">
       <h2 data-i18n="resources">资源</h2>
       <div class="filters" id="filters">
@@ -210,29 +216,35 @@
     </div>
   </div>
 
-  <div class="term-overlay" id="termOverlay">
-    <div class="term-bar">
-      <span class="term-title" id="termTitle">SSH</span>
-      <button id="termFontDec" type="button" title="A-">A−</button>
-      <button id="termFontInc" type="button" title="A+">A＋</button>
-      <button id="snippetToggle" type="button" data-i18n="snippets">片段</button>
-      <button id="termClose" type="button" title="Close">✕</button>
-    </div>
-    <div class="reconnect-bar" id="reconnectBar" hidden>
-      <span id="reconnectMsg"></span>
-      <label><input type="checkbox" id="autoReconnect" /> <span data-i18n="autoReconnect">自动重连</span></label>
-      <button id="reconnectBtn" type="button" data-i18n="reconnect">重连</button>
-    </div>
-    <div class="snippet-bar" id="snippetBar">
-      <div class="snippet-scroll" id="snippetScroll"></div>
-      <div class="snippet-add-row" id="snippetAddRow" hidden>
-        <input id="snippetAddInput" type="text" data-i18n-placeholder="snippetAddPh" autocomplete="off" spellcheck="false" />
-        <button id="snippetAddConfirm" type="button" data-i18n="add">添加</button>
+  <!-- SSH 终端模板（hidden，用于克隆生成多个终端标签页） -->
+  <template id="termOverlayTemplate">
+    <div class="term-overlay">
+      <div class="term-bar">
+        <span class="term-title">SSH</span>
+        <button class="term-font-dec" type="button" title="A-">A−</button>
+        <button class="term-font-inc" type="button" title="A+">A＋</button>
+        <button class="snippet-toggle" type="button" data-i18n="snippets">片段</button>
+        <button class="term-close" type="button" title="Close">✕</button>
       </div>
-      <button id="snippetAddBtn" type="button" title="add snippet">＋</button>
+      <div class="reconnect-bar" hidden>
+        <span class="reconnect-msg"></span>
+        <label><input type="checkbox" class="auto-reconnect" /> <span data-i18n="autoReconnect">自动重连</span></label>
+        <button class="reconnect-btn" type="button" data-i18n="reconnect">重连</button>
+      </div>
+      <div class="snippet-bar">
+        <div class="snippet-scroll"></div>
+        <div class="snippet-add-row" hidden>
+          <input class="snippet-add-input" type="text" data-i18n-placeholder="snippetAddPh" autocomplete="off" spellcheck="false" />
+          <button class="snippet-add-confirm" type="button" data-i18n="add">添加</button>
+        </div>
+        <button class="snippet-add-btn" type="button" title="add snippet">＋</button>
+      </div>
+      <div class="term-container"></div>
     </div>
-    <div id="termContainer"></div>
-  </div>
+  </template>
+
+  <div id="terminalContainer"></div>
+  </div><!-- /#appMain -->
 
   <script src="vendor/xterm.js"></script>
   <script src="app.js"></script>

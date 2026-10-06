@@ -529,14 +529,130 @@
     }
 
     // -----------------------------------------------------------------------
-    // SSH terminal (xterm.js overlay + framed binary channels)
+    // Tab system (browser-like multi-panel tabs)
     // -----------------------------------------------------------------------
-    let term = null;
-    let termSessionId = null;   // active session id fed to sendBinary/notify
-    let termNodeName = null;    // hostname, needed to reopen after a drop
-    let termDone = false;       // true once the backend sent its end frame
-    let lastSeq = 0;            // monotonic dedup against out-channel frames
-    const pendingOut = new Map(); // sid -> frames buffered before the term opens
+    const TAB_SSH = "ssh";
+    const TAB_BATCH = "batch";
+    const TAB_FORWARD = "forward";
+    const TAB_TRANSFER = "transfer";
+    const TAB_INSPECT = "inspect";
+    const SINGLETON_TABS = new Set([TAB_BATCH, TAB_FORWARD, TAB_TRANSFER, TAB_INSPECT]);
+
+    // Map overlay element id -> tab type
+    const OVERLAY_FOR_TYPE = {
+      [TAB_BATCH]: "batchOverlay",
+      [TAB_FORWARD]: "forwardOverlay",
+      [TAB_TRANSFER]: "transferOverlay",
+      [TAB_INSPECT]: "inspectOverlay",
+    };
+    const TAB_TITLE = {
+      [TAB_BATCH]: "批量执行",
+      [TAB_FORWARD]: "端口转发",
+      [TAB_TRANSFER]: "文件传输",
+      [TAB_INSPECT]: "巡检总览",
+    };
+
+    const openTabs = [];          // [{id, type, title, sessionId?, nodeName?}]
+    let activeTabId = null;
+
+    function getHeaderHeight() {
+      const h = $("#appHeader");
+      return h ? h.offsetHeight : 130;
+    }
+    function updateHeaderHeight() {
+      document.documentElement.style.setProperty("--header-h", getHeaderHeight() + "px");
+    }
+
+    function renderTabBar() {
+      const bar = $("#tabBar");
+      bar.innerHTML = "";
+      if (openTabs.length === 0) { bar.hidden = true; return; }
+      bar.hidden = false;
+      openTabs.forEach((tab) => {
+        const item = document.createElement("div");
+        item.className = "tab-item" + (tab.id === activeTabId ? " active" : "");
+        item.dataset.tabId = tab.id;
+        const title = document.createElement("span");
+        title.className = "tab-title";
+        title.textContent = tab.title;
+        const closeBtn = document.createElement("button");
+        closeBtn.className = "tab-close";
+        closeBtn.type = "button";
+        closeBtn.textContent = "✕";
+        closeBtn.title = "关闭";
+        closeBtn.addEventListener("click", (e) => { e.stopPropagation(); closeTab(tab.id); });
+        item.addEventListener("click", () => activateTab(tab.id));
+        item.appendChild(title);
+        item.appendChild(closeBtn);
+        bar.appendChild(item);
+      });
+    }
+
+    function showResourcePanel() {
+      // Hide all overlays, show resource list + batch bar.
+      document.querySelectorAll(".batch-overlay, .term-overlay").forEach((el) => el.classList.remove("open"));
+      $("#resourcePanel").style.display = "";
+      $("#batchBar").style.display = "";
+    }
+
+    function activateTab(id) {
+      activeTabId = id;
+      const tab = openTabs.find((t) => t.id === id);
+      // Hide everything first.
+      document.querySelectorAll(".batch-overlay, .term-overlay").forEach((el) => el.classList.remove("open"));
+      if (!tab) {
+        showResourcePanel();
+        renderTabBar();
+        return;
+      }
+      // Hide resource panel when a tab is active.
+      $("#resourcePanel").style.display = "none";
+      $("#batchBar").style.display = "none";
+      const overlayId = OVERLAY_FOR_TYPE[tab.type];
+      if (overlayId) {
+        document.getElementById(overlayId)?.classList.add("open");
+      } else if (tab.type === TAB_SSH) {
+        // Terminal overlay is stored on the session object.
+        if (tab.session && tab.session.el) tab.session.el.classList.add("open");
+      }
+      renderTabBar();
+    }
+
+    function openTab(type, title, opts) {
+      // Singleton tabs: if already open, just activate it.
+      if (SINGLETON_TABS.has(type)) {
+        const existing = openTabs.find((t) => t.type === type);
+        if (existing) { activateTab(existing.id); return existing.id; }
+      }
+      const id = "tab-" + Date.now() + "-" + Math.random().toString(36).slice(2, 7);
+      const tab = { id, type, title: title || TAB_TITLE[type] || type, ...(opts || {}) };
+      openTabs.push(tab);
+      activateTab(id);
+      return id;
+    }
+
+    function closeTab(id) {
+      const idx = openTabs.findIndex((t) => t.id === id);
+      if (idx === -1) return;
+      const tab = openTabs[idx];
+      // Cleanup per-type.
+      if (tab.type === TAB_SSH && tab.session) {
+        tab.session.destroy();
+      }
+      openTabs.splice(idx, 1);
+      const next = openTabs[idx] || openTabs[idx - 1];
+      if (next) activateTab(next.id);
+      else { activeTabId = null; showResourcePanel(); renderTabBar(); }
+    }
+
+    // -----------------------------------------------------------------------
+    // SSH terminal (xterm.js — multi-instance, one per tab)
+    // -----------------------------------------------------------------------
+    // Each SSH tab owns a TerminalSession: its own xterm, DOM overlay, session
+    // id, reconnect state. Frames are routed by session id so multiple terminals
+    // can live side by side.
+    const terminalSessions = new Map(); // sid -> TerminalSession
+    const pendingOut = new Map();        // sid -> buffered frames before xterm opens
 
     // Terminal font size, persisted across sessions (10..24px).
     let termFontSize = 13;
@@ -548,33 +664,17 @@
     function setTermFontSize(px) {
       termFontSize = Math.min(24, Math.max(10, px));
       try { localStorage.setItem("teleport.termFontSize", String(termFontSize)); } catch (e) {}
-      if (term) {
-        term.options.fontSize = termFontSize;
-        try { fitTerminal(); sendResize(); } catch (e) {}
-      }
+      terminalSessions.forEach((s) => s.setFontSize(termFontSize));
     }
-
-    // Reconnect state.
-    let autoReconnectOn = false;
-    let reconnectTimer = null;
-    let reconnectAttempts = 0;
-    let reconnectInFlight = false;
-    const MAX_RECONNECT_ATTEMPTS = 5;
 
     function isTerminalChannel(ch) {
       return typeof ch === "string" && ch.startsWith("ssh/terminal/out/");
     }
 
     function onTerminalFrame(sid, stream, seq, payload) {
-      if (termSessionId === sid && term && !termDone) {
-        if (seq > lastSeq) {
-          lastSeq = seq;
-          if (stream === 2) {
-            handleSessionEnd();
-          } else {
-            try { term.write(payload); } catch (e) {}
-          }
-        }
+      const sess = terminalSessions.get(sid);
+      if (sess && sess.term && !sess.done) {
+        sess.writeFrame(seq, stream, payload);
       } else {
         if (!pendingOut.has(sid)) pendingOut.set(sid, []);
         pendingOut.get(sid).push({ seq, stream, payload });
@@ -582,193 +682,263 @@
     }
 
     function flushPendingFrames(sid) {
+      const sess = terminalSessions.get(sid);
+      if (!sess) return;
       const queued = pendingOut.get(sid) || [];
       pendingOut.delete(sid);
-      queued
-        .sort((a, b) => a.seq - b.seq)
-        .forEach(({ seq, stream, payload }) => {
-          if (seq > lastSeq) {
-            lastSeq = seq;
-            if (stream === 2) {
-              handleSessionEnd();
+      queued.sort((a, b) => a.seq - b.seq).forEach(({ seq, stream, payload }) => {
+        sess.writeFrame(seq, stream, payload);
+      });
+    }
+
+    /// Create a new terminal session: clones the overlay template, wires xterm,
+    /// returns the session object. Caller sets sessionId once the backend
+    /// responds.
+    function createTerminalSession(nodeName) {
+      const tpl = $("#termOverlayTemplate");
+      const frag = tpl.content.cloneNode(true);
+      const el = frag.querySelector(".term-overlay");
+      el.dataset.node = nodeName;
+      $("#terminalContainer").appendChild(el);
+
+      const sess = {
+        el,
+        nodeName,
+        sessionId: null,
+        term: null,
+        done: false,
+        lastSeq: 0,
+        autoReconnect: false,
+        reconnectTimer: null,
+        reconnectAttempts: 0,
+        reconnectInFlight: false,
+
+        setFontSize(px) {
+          if (this.term) {
+            this.term.options.fontSize = px;
+            try { this.fit(); this.sendResize(); } catch (e) {}
+          }
+        },
+
+        fit() {
+          if (!this.term) return;
+          const container = el.querySelector(".term-container");
+          if (!container) return;
+          const width = container.clientWidth, height = container.clientHeight;
+          if (!width || !height) return;
+          const fontFamily = (this.term.options && this.term.options.fontFamily) || 'Consolas, "Cascadia Mono", monospace';
+          const fontSize = (this.term.options && this.term.options.fontSize) || 13;
+          let cw = Math.round(fontSize * 0.6), ch = Math.round(fontSize * 1.2);
+          try {
+            const probe = document.createElement("span");
+            probe.textContent = "W";
+            probe.setAttribute("aria-hidden", "true");
+            probe.style.cssText = `position:absolute;visibility:hidden;top:0;left:0;white-space:pre;line-height:normal;font-family:${fontFamily};font-size:${fontSize}px;`;
+            container.appendChild(probe);
+            const rect = probe.getBoundingClientRect();
+            if (rect && rect.width > 0 && rect.height > 0) { cw = rect.width; ch = rect.height; }
+            container.removeChild(probe);
+          } catch (e) {}
+          this.term.resize(Math.max(2, Math.floor(width / cw)), Math.max(1, Math.floor(height / ch)));
+        },
+
+        sendResize() {
+          if (!this.sessionId || this.done || !this.term) return;
+          const cols = this.term.cols, rows = this.term.rows;
+          if (!cols || !rows || isNaN(cols) || isNaN(rows)) return;
+          window.dbxPlugin.notify("ssh/terminal/resize", { sessionId: this.sessionId, cols, rows }).catch(() => {});
+        },
+
+        writeFrame(seq, stream, payload) {
+          if (seq > this.lastSeq) {
+            this.lastSeq = seq;
+            if (stream === 2) this.handleEnd();
+            else { try { this.term.write(payload); } catch (e) {} }
+          }
+        },
+
+        showError(msg) {
+          const c = el.querySelector(".term-container");
+          if (c) {
+            c.style.display = "block"; c.style.padding = "14px 16px";
+            c.style.fontFamily = "ui-monospace, Consolas, monospace"; c.style.fontSize = "13px";
+            c.style.color = "#9c2f1f"; c.style.background = "#f6f1e7";
+            c.textContent = `[term error] ${msg}`;
+          }
+          try { window.dbxPlugin.copy(String(msg)); } catch (e) {}
+        },
+
+        open() {
+          try {
+            if (!window.Terminal || typeof window.Terminal !== "function") throw new Error("xterm Terminal unavailable");
+            this.term = new window.Terminal({
+              cursorBlink: true, fontSize: termFontSize,
+              fontFamily: 'Consolas, "Cascadia Mono", monospace',
+              theme: { background: "#f6f1e7", foreground: "#3b3021", cursor: "#b5791f", selectionBackground: "#d9c9a3" },
+              scrollback: 5000, allowTransparency: false,
+            });
+            this.term.open(el.querySelector(".term-container"));
+            this.fit();
+            this.term.focus();
+            const self = this;
+            this.term.onData((data) => {
+              if (self.sessionId && !self.done) {
+                let bytes;
+                try { bytes = new TextEncoder().encode(data); } catch (e) { bytes = new Uint8Array(data.length); for (let i = 0; i < data.length; i++) bytes[i] = data.charCodeAt(i) & 0xff; }
+                window.dbxPlugin.sendBinary(`ssh/terminal/in/${self.sessionId}`, bytes);
+              }
+            });
+            this.term.onResize(() => self.sendResize());
+            new ResizeObserver(() => { try { self.fit(); self.sendResize(); } catch (e) {} }).observe(el.querySelector(".term-container"));
+          } catch (e) {
+            this.term = null;
+            this.showError(String((e && e.message) || e));
+          }
+        },
+
+        handleEnd() {
+          if (this.done) return;
+          this.done = true;
+          try { this.term.write("\r\n\x1b[90m[" + t.connLost + "]\x1b[0m\r\n"); } catch (e) {}
+          this.reconnectAttempts = 0;
+          const bar = el.querySelector(".reconnect-bar");
+          if (bar) { bar.hidden = false; bar.querySelector(".reconnect-msg").textContent = t.connLost; }
+          if (this.autoReconnect && this.nodeName) this.scheduleReconnect(2000, 1);
+        },
+
+        scheduleReconnect(delayMs, attempt) {
+          clearTimeout(this.reconnectTimer);
+          const bar = el.querySelector(".reconnect-bar");
+          if (bar) {
+            bar.hidden = false;
+            bar.querySelector(".reconnect-msg").textContent = t.retryHint.replace("{n}", String(Math.round(delayMs / 1000))).replace("{attempt}", String(attempt));
+          }
+          const self = this;
+          this.reconnectTimer = setTimeout(() => self.reconnect(), delayMs);
+        },
+
+        async reconnect() {
+          if (this.reconnectInFlight || !this.nodeName) return;
+          this.reconnectInFlight = true;
+          clearTimeout(this.reconnectTimer);
+          try { this.term.write("\x1b[33m[" + t.reconnecting + "]\x1b[0m\r\n"); } catch (e) {}
+          try {
+            const res = await callSidecar("contextMenu/io.zdiai.teleport.ssh", { connectionId, name: this.nodeName }, 25000);
+            const sid = res && (res.sessionId || res.session_id);
+            if (!sid) throw new Error("missing session id");
+            // Drop the old session mapping, install the new one.
+            if (this.sessionId) terminalSessions.delete(this.sessionId);
+            this.sessionId = sid;
+            terminalSessions.set(sid, this);
+            this.done = false;
+            this.lastSeq = 0;
+            this.reconnectAttempts = 0;
+            try { this.term.write("\x1b[32m[" + t.reconnected + "]\x1b[0m\r\n"); } catch (e) {}
+            const bar = el.querySelector(".reconnect-bar");
+            if (bar) bar.hidden = true;
+            flushPendingFrames(sid);
+            setTimeout(() => this.sendResize(), 80);
+            try { this.term.focus(); } catch (e) {}
+          } catch (e) {
+            this.reconnectAttempts++;
+            const msg = String((e && e.message) || e);
+            try { this.term.write("\x1b[31m[" + t.reconnectFail.replace("{msg}", msg) + "]\x1b[0m\r\n"); } catch (er) {}
+            if (this.autoReconnect && this.reconnectAttempts < 5) {
+              const backoff = [3000, 5000, 8000, 10000, 10000][this.reconnectAttempts - 1] || 10000;
+              this.scheduleReconnect(backoff, this.reconnectAttempts + 1);
             } else {
-              try { term.write(payload); } catch (e) {}
+              const bar = el.querySelector(".reconnect-bar");
+              if (bar) { bar.hidden = false; bar.querySelector(".reconnect-msg").textContent = this.autoReconnect ? t.autoStopped : t.reconnectFail.replace("{msg}", msg); }
             }
+          } finally {
+            this.reconnectInFlight = false;
           }
-        });
-    }
+        },
 
-    function sendResize() {
-      if (!termSessionId || termDone || !term) return;
-      const cols = term.cols, rows = term.rows;
-      if (!cols || !rows || isNaN(cols) || isNaN(rows)) return;
-      window.dbxPlugin
-        .notify("ssh/terminal/resize", { sessionId: termSessionId, cols, rows })
-        .catch(() => {});
-    }
-
-    // Version-safe fit: measure one glyph in the terminal's font and derive
-    // cols/rows from the container size. Avoids the fragile window.FitAddon
-    // global and xterm's version-specific addon packaging.
-    function fitTerminal() {
-      if (!term) return;
-      const container = $("#termContainer");
-      if (!container) return;
-      const width = container.clientWidth;
-      const height = container.clientHeight;
-      if (!width || !height) return;
-      const fontFamily = (term.options && term.options.fontFamily) || 'Consolas, "Cascadia Mono", monospace';
-      const fontSize = (term.options && term.options.fontSize) || 13;
-      let cw = Math.round(fontSize * 0.6), ch = Math.round(fontSize * 1.2);
-      try {
-        const probe = document.createElement("span");
-        probe.textContent = "W";
-        probe.setAttribute("aria-hidden", "true");
-        probe.style.cssText = `position:absolute;visibility:hidden;top:0;left:0;white-space:pre;line-height:normal;font-family:${fontFamily};font-size:${fontSize}px;`;
-        container.appendChild(probe);
-        const rect = probe.getBoundingClientRect();
-        if (rect && rect.width > 0 && rect.height > 0) { cw = rect.width; ch = rect.height; }
-        container.removeChild(probe);
-      } catch (e) {}
-      term.resize(Math.max(2, Math.floor(width / cw)), Math.max(1, Math.floor(height / ch)));
-    }
-
-    function showTermError(msg) {
-      const c = $("#termContainer");
-      if (c) {
-        c.style.display = "block";
-        c.style.padding = "14px 16px";
-        c.style.fontFamily = "ui-monospace, Consolas, monospace";
-        c.style.fontSize = "13px";
-        c.style.color = "#9c2f1f";
-        c.style.background = "#f6f1e7";
-        c.textContent = `[term error] ${msg}`;
-      }
-      try { window.dbxPlugin.copy(String(msg)); } catch (e) {}
-    }
-
-    function openTerminalOverlay() {
-      const overlay = $("#termOverlay");
-      overlay.classList.add("open");
-      try {
-        if (!window.Terminal || typeof window.Terminal !== "function") {
-          throw new Error("xterm Terminal unavailable");
-        }
-        term = new window.Terminal({
-          cursorBlink: true,
-          fontSize: termFontSize,
-          fontFamily: 'Consolas, "Cascadia Mono", monospace',
-          theme: { background: "#f6f1e7", foreground: "#3b3021", cursor: "#b5791f", selectionBackground: "#d9c9a3" },
-          scrollback: 5000,
-          allowTransparency: false
-        });
-        term.open($("#termContainer"));
-        fitTerminal();
-        term.focus();
-
-        term.onData((data) => {
-          if (termSessionId && !termDone) {
-            // sendBinary treats a string as already-base64 (the host decodes it
-            // again), so raw keystrokes would be mangled. Send UTF-8 bytes as a
-            // Uint8Array so they reach the pty verbatim.
-            let bytes;
-            try { bytes = new TextEncoder().encode(data); } catch (e) { bytes = new Uint8Array(data.length); for (let i = 0; i < data.length; i++) bytes[i] = data.charCodeAt(i) & 0xff; }
-            window.dbxPlugin.sendBinary(`ssh/terminal/in/${termSessionId}`, bytes);
+        destroy() {
+          clearTimeout(this.reconnectTimer);
+          if (this.sessionId) {
+            window.dbxPlugin.notify("ssh/terminal/close", { sessionId: this.sessionId }).catch(() => {});
+            terminalSessions.delete(this.sessionId);
           }
-        });
-        term.onResize(() => sendResize());
-        new ResizeObserver(() => {
-          try { fitTerminal(); sendResize(); } catch (e) {}
-        }).observe($("#termContainer"));
-      } catch (e) {
-        term = null;
-        showTermError(String((e && e.message) || e));
-      }
-    }
+          if (this.term) { try { this.term.dispose(); } catch (e) {} }
+          el.remove();
+        },
+      };
 
-    function closeTerminalOverlay() {
-      clearTimeout(reconnectTimer);
-      reconnectTimer = null;
-      reconnectInFlight = false;
-      reconnectAttempts = 0;
-      if (termSessionId) {
-        window.dbxPlugin.notify("ssh/terminal/close", { sessionId: termSessionId }).catch(() => {});
-      }
-      if (term) { try { term.dispose(); } catch (e) {} }
-      term = null;
-      termSessionId = null;
-      termNodeName = null;
-      termDone = false;
-      lastSeq = 0;
-      $("#reconnectBar").hidden = true;
-      $("#termOverlay").classList.remove("open");
-    }
-
-    // -----------------------------------------------------------------------
-    // Reconnect on dropped links
-    // -----------------------------------------------------------------------
-    function handleSessionEnd() {
-      if (termDone) return;
-      termDone = true;
-      try { term.write("\r\n\x1b[90m[" + t.connLost + "]\x1b[0m\r\n"); } catch (e) {}
-      reconnectAttempts = 0;
-      const bar = $("#reconnectBar");
-      bar.hidden = false;
-      $("#reconnectMsg").textContent = t.connLost;
-      if (autoReconnectOn && termNodeName) {
-        scheduleReconnect(2000, 1);
-      }
-    }
-
-    function scheduleReconnect(delayMs, attempt) {
-      clearTimeout(reconnectTimer);
-      $("#reconnectBar").hidden = false;
-      $("#reconnectMsg").textContent =
-        t.retryHint.replace("{n}", String(Math.round(delayMs / 1000)))
-          .replace("{attempt}", String(attempt));
-      reconnectTimer = setTimeout(reconnectSsh, delayMs);
-    }
-
-    async function reconnectSsh() {
-      if (reconnectInFlight || !termNodeName) return;
-      reconnectInFlight = true;
-      clearTimeout(reconnectTimer);
-      try { term.write("\x1b[33m[" + t.reconnecting + "]\x1b[0m\r\n"); } catch (e) {}
-      try {
-        const res = await callSidecar(
-          "contextMenu/io.zdiai.teleport.ssh",
-          { connectionId, name: termNodeName },
-          25000
-        );
-        const sid = res && (res.sessionId || res.session_id);
-        if (!sid) throw new Error("missing session id");
-        termSessionId = sid;
-        termDone = false;
-        lastSeq = 0;
-        reconnectAttempts = 0;
-        try { term.write("\x1b[32m[" + t.reconnected + "]\x1b[0m\r\n"); } catch (e) {}
-        $("#reconnectBar").hidden = true;
-        flushPendingFrames(sid);
-        setTimeout(sendResize, 80);
-        try { term.focus(); } catch (e) {}
-      } catch (e) {
-        reconnectAttempts++;
-        const msg = String((e && e.message) || e);
-        try {
-          term.write("\x1b[31m[" + t.reconnectFail.replace("{msg}", msg) + "]\x1b[0m\r\n");
-        } catch (er) {}
-        if (autoReconnectOn && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-          // Backoff: 3s, 5s, 8s, 10s, 10s.
-          const backoff = [3000, 5000, 8000, 10000, 10000][reconnectAttempts - 1] || 10000;
-          scheduleReconnect(backoff, reconnectAttempts + 1);
-        } else {
-          $("#reconnectBar").hidden = false;
-          $("#reconnectMsg").textContent =
-            autoReconnectOn ? t.autoStopped : t.reconnectFail.replace("{msg}", msg);
+      // Wire up the per-session controls.
+      el.querySelector(".term-title").textContent = `SSH — ${nodeName}`;
+      el.querySelector(".term-close").addEventListener("click", () => {
+        const tab = openTabs.find((t) => t.session === sess);
+        if (tab) closeTab(tab.id);
+      });
+      el.querySelector(".term-font-dec").addEventListener("click", () => setTermFontSize(termFontSize - 1));
+      el.querySelector(".term-font-inc").addEventListener("click", () => setTermFontSize(termFontSize + 1));
+      el.querySelector(".term-container").addEventListener("wheel", (e) => {
+        if (!e.ctrlKey) return;
+        e.preventDefault();
+        setTermFontSize(termFontSize + (e.deltaY < 0 ? 1 : -1));
+      }, { passive: false });
+      el.querySelector(".reconnect-btn").addEventListener("click", () => { sess.reconnectAttempts = 0; sess.reconnect(); });
+      el.querySelector(".auto-reconnect").addEventListener("change", (e) => {
+        sess.autoReconnect = e.target.checked;
+        if (sess.autoReconnect && sess.done && sess.nodeName && !sess.reconnectTimer) sess.scheduleReconnect(2000, 1);
+        if (!sess.autoReconnect) clearTimeout(sess.reconnectTimer);
+      });
+      el.querySelector(".snippet-toggle").addEventListener("click", () => el.querySelector(".snippet-bar").classList.toggle("collapsed"));
+      el.querySelector(".snippet-add-btn").addEventListener("click", () => {
+        const row = el.querySelector(".snippet-add-row");
+        row.hidden = !row.hidden;
+        if (!row.hidden) { const inp = el.querySelector(".snippet-add-input"); inp.value = ""; inp.focus(); }
+      });
+      const confirmAdd = () => {
+        const input = el.querySelector(".snippet-add-input");
+        const v = input.value;
+        if (v && !BUILTIN_SNIPPETS.includes(v) && !customSnippets.includes(v)) {
+          customSnippets.push(v);
+          persistCustomSnippets();
+          renderAllSnippets();
         }
-      } finally {
-        reconnectInFlight = false;
+        input.value = "";
+        el.querySelector(".snippet-add-row").hidden = true;
+      };
+      el.querySelector(".snippet-add-confirm").addEventListener("click", confirmAdd);
+      el.querySelector(".snippet-add-input").addEventListener("keydown", (e) => { if (e.key === "Enter") confirmAdd(); });
+
+      return sess;
+    }
+
+    /// Open an SSH terminal to the given node as a new tab. Multiple terminals
+    /// to different (or the same) node can be open simultaneously.
+    async function openSshTerminal(name) {
+      if (!window.Terminal || typeof window.Terminal !== "function") {
+        alert("xterm.js failed to load");
+        return;
       }
+      const sess = createTerminalSession(name);
+      sess.open();
+      renderSnippetsFor(sess);
+      const tabId = openTab(TAB_SSH, `SSH — ${name}`, { session: sess });
+      sess.tabId = tabId;
+
+      let res;
+      try {
+        res = await callSidecar("contextMenu/io.zdiai.teleport.ssh", { connectionId, name }, 20000);
+      } catch (e) {
+        window.dbxPlugin.copy(String(e.message || e));
+        sess.showError(String(e.message || e));
+        return;
+      }
+      const sid = res && (res.sessionId || res.session_id);
+      if (!sid) {
+        window.dbxPlugin.copy(JSON.stringify(res));
+        sess.showError("missing session id");
+        return;
+      }
+      sess.sessionId = sid;
+      terminalSessions.set(sid, sess);
+      flushPendingFrames(sid);
+      setTimeout(() => sess.sendResize(), 80);
     }
 
     // -----------------------------------------------------------------------
@@ -801,8 +971,8 @@
       }
     }
 
-    function renderSnippets() {
-      const scroll = $("#snippetScroll");
+    function renderSnippetsFor(sess) {
+      const scroll = sess.el.querySelector(".snippet-scroll");
       scroll.innerHTML = "";
       const buildChip = (text, custom) => {
         const chip = document.createElement("button");
@@ -814,7 +984,7 @@
           ? (t.snippetAddPh ? "点击插入，不自动执行" : "insert only")
           : "click to run";
         chip.appendChild(label);
-        chip.addEventListener("click", () => sendSnippet(text));
+        chip.addEventListener("click", () => sendSnippetTo(sess, text));
         if (custom) {
           const x = document.createElement("span");
           x.className = "chip-x";
@@ -823,7 +993,7 @@
             e.stopPropagation();
             customSnippets = customSnippets.filter((s) => s !== text);
             persistCustomSnippets();
-            renderSnippets();
+            renderAllSnippets();
           });
           chip.appendChild(x);
         }
@@ -833,53 +1003,27 @@
       customSnippets.forEach((s) => buildChip(s, true));
     }
 
-    /// Send a snippet to the live PTY. A trailing space means "insert and let
-    /// me complete the arguments"; otherwise the command is run immediately.
-    function sendSnippet(text) {
-      if (!term) return;
-      if (!termSessionId || termDone) {
-        try { term.focus(); } catch (e) {}
+    /// Re-render snippets across all open terminal sessions (e.g. after a
+    /// custom snippet is added/removed).
+    function renderAllSnippets() {
+      terminalSessions.forEach((s) => { try { renderSnippetsFor(s); } catch (e) {} });
+    }
+
+    /// Send a snippet to a specific session's PTY.
+    function sendSnippetTo(sess, text) {
+      if (!sess || !sess.term) return;
+      if (!sess.sessionId || sess.done) {
+        try { sess.term.focus(); } catch (e) {}
         return;
       }
       try {
         const enc = new TextEncoder();
-        window.dbxPlugin.sendBinary(`ssh/terminal/in/${termSessionId}`, enc.encode(text));
+        window.dbxPlugin.sendBinary(`ssh/terminal/in/${sess.sessionId}`, enc.encode(text));
         if (text.slice(-1) !== " ") {
-          window.dbxPlugin.sendBinary(`ssh/terminal/in/${termSessionId}`, enc.encode("\r"));
+          window.dbxPlugin.sendBinary(`ssh/terminal/in/${sess.sessionId}`, enc.encode("\r"));
         }
-        term.focus();
+        sess.term.focus();
       } catch (e) {}
-    }
-
-    async function openSshTerminal(name) {
-      if (!window.Terminal || typeof window.Terminal !== "function") {
-        alert("xterm.js failed to load");
-        return;
-      }
-      let res;
-      try {
-        res = await callSidecar("contextMenu/io.zdiai.teleport.ssh", { connectionId, name }, 20000);
-      } catch (e) {
-        window.dbxPlugin.copy(String(e.message || e));
-        return;
-      }
-      const sid = res && (res.sessionId || res.session_id);
-      if (!sid) {
-        window.dbxPlugin.copy(JSON.stringify(res));
-        return;
-      }
-      $("#termTitle").textContent = `SSH — ${name}`;
-      termSessionId = sid;
-      termNodeName = name;
-      termDone = false;
-      lastSeq = 0;
-      clearTimeout(reconnectTimer);
-      reconnectAttempts = 0;
-      $("#reconnectBar").hidden = true;
-      openTerminalOverlay();
-      renderSnippets();
-      flushPendingFrames(sid);
-      setTimeout(sendResize, 80);
     }
 
     async function runCardAction(act, r) {
@@ -920,7 +1064,7 @@
     function openForwardOverlay(prefillNode) {
       populateNodeDatalist();
       if (prefillNode) $("#fwdNode").value = prefillNode;
-      $("#forwardOverlay").classList.add("open");
+      openTab(TAB_FORWARD);
       $("#fwdMsg").textContent = "";
       refreshForwards();
     }
@@ -1338,7 +1482,7 @@
     }
 
     function openInspectOverlay() {
-      $("#inspectOverlay").classList.add("open");
+      openTab(TAB_INSPECT);
       renderInspect();
       if (!inspData.size && !inspRunning) runInspect();
     }
@@ -1424,7 +1568,7 @@
     function openBatchOverlay(command) {
       lastBatchCommand = command;
       lastBatchSummary = null;
-      $("#batchOverlay").classList.add("open");
+      openTab(TAB_BATCH, `${t.batch} › ${command}`.slice(0, 40));
       $("#batchOverlayTitle").textContent = `${t.batch} › ${command}`;
       $("#batchSummary").textContent = "";
       // Start on the table view; report view stays hidden until requested.
@@ -1625,7 +1769,7 @@
       renderXferRows();
       updatePushAllLabel();
       switchXferTab("up");
-      $("#transferOverlay").classList.add("open");
+      openTab(TAB_TRANSFER);
     }
 
     function updatePushAllLabel() {
@@ -1789,61 +1933,11 @@
     $("#xferDownBtn").addEventListener("click", startDownload);
     $("#transferOverlayClose").addEventListener("click", () => {
       if (xferBusy) return;
-      $("#transferOverlay").classList.remove("open");
+      const tab = openTabs.find((t) => t.type === TAB_TRANSFER);
+      if (tab) closeTab(tab.id);
     });
 
-    $("#termClose").addEventListener("click", closeTerminalOverlay);
-
-    // Font-size controls (buttons + Ctrl+wheel over the terminal).
-    $("#termFontDec").addEventListener("click", () => setTermFontSize(termFontSize - 1));
-    $("#termFontInc").addEventListener("click", () => setTermFontSize(termFontSize + 1));
-    $("#termContainer").addEventListener("wheel", (e) => {
-      if (!e.ctrlKey) return;
-      e.preventDefault();
-      setTermFontSize(termFontSize + (e.deltaY < 0 ? 1 : -1));
-    }, { passive: false });
-
-    // Reconnect controls.
-    $("#reconnectBtn").addEventListener("click", () => {
-      reconnectAttempts = 0;
-      reconnectSsh();
-    });
-    $("#autoReconnect").addEventListener("change", (e) => {
-      autoReconnectOn = e.target.checked;
-      // Enabling it while already disconnected starts the loop immediately.
-      if (autoReconnectOn && termDone && termNodeName && !reconnectTimer) {
-        scheduleReconnect(2000, 1);
-      }
-      if (!autoReconnectOn) clearTimeout(reconnectTimer);
-    });
-
-    // Snippet bar collapse + custom snippet add flow.
-    $("#snippetToggle").addEventListener("click", () => {
-      $("#snippetBar").classList.toggle("collapsed");
-    });
-    $("#snippetAddBtn").addEventListener("click", () => {
-      const row = $("#snippetAddRow");
-      row.hidden = !row.hidden;
-      if (!row.hidden) {
-        $("#snippetAddInput").value = "";
-        $("#snippetAddInput").focus();
-      }
-    });
-    const confirmAddSnippet = () => {
-      const input = $("#snippetAddInput");
-      const v = input.value;
-      if (v && !BUILTIN_SNIPPETS.includes(v) && !customSnippets.includes(v)) {
-        customSnippets.push(v);
-        persistCustomSnippets();
-        renderSnippets();
-      }
-      input.value = "";
-      $("#snippetAddRow").hidden = true;
-    };
-    $("#snippetAddConfirm").addEventListener("click", confirmAddSnippet);
-    $("#snippetAddInput").addEventListener("keydown", (e) => {
-      if (e.key === "Enter") confirmAddSnippet();
-    });
+    // Terminal controls are now wired per-session inside createTerminalSession().
 
     $("#batchToggleForm").addEventListener("click", () => {
       $("#batchForm").classList.toggle("open");
@@ -1857,16 +1951,18 @@
     $("#batchOverlayClose").addEventListener("click", () => {
       // Keep the overlay while a batch is in flight so rows keep streaming in.
       if (batchRunning) return;
-      $("#batchOverlay").classList.remove("open");
+      const tab = openTabs.find((t) => t.type === TAB_BATCH);
+      if (tab) closeTab(tab.id);
       activeBatchId = null;
     });
     $("#btnProbe").addEventListener("click", runProbe);
     $("#btnInspect").addEventListener("click", openInspectOverlay);
     $("#inspRefreshBtn").addEventListener("click", runInspect);
     $("#inspectOverlayClose").addEventListener("click", () => {
-      $("#inspectOverlay").classList.remove("open");
       $("#inspDetail").hidden = true;
       setInspectAuto(false);
+      const tab = openTabs.find((t) => t.type === TAB_INSPECT);
+      if (tab) closeTab(tab.id);
     });
     $("#inspAuto").addEventListener("change", (e) => setInspectAuto(e.target.checked));
     $("#inspDetailClose").addEventListener("click", () => {
@@ -1880,7 +1976,8 @@
     $("#fwdCreateBtn").addEventListener("click", createForward);
     $("#forwardOverlayClose").addEventListener("click", () => {
       if (fwdBusy) return;
-      $("#forwardOverlay").classList.remove("open");
+      const tab = openTabs.find((t) => t.type === TAB_FORWARD);
+      if (tab) closeTab(tab.id);
     });
     // Enter anywhere in the create form submits it.
     ["fwdNode", "fwdLocalPort", "fwdTargetHost", "fwdTargetPort"].forEach((id) => {
@@ -1945,8 +2042,10 @@
 
     window.dbxPlugin.ready.then((ctx) => {
       try {
-        // 保险：无论之前处于何种状态，加载时强制关闭终端覆盖层
-        $("#termOverlay").classList.remove("open");
+        // 保险：加载时关闭所有打开的标签页，回到资源列表
+        [...openTabs].forEach((tab) => closeTab(tab.id));
+        updateHeaderHeight();
+        window.addEventListener("resize", updateHeaderHeight);
         const locale = (window.dbxPlugin.locale || "zh-CN").toLowerCase();
         t = I18N[locale] || I18N["zh-cn"];
         connectionId = (ctx && ctx.connectionId) || window.dbxPlugin.context?.connectionId || null;
